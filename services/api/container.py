@@ -69,21 +69,52 @@ from packages.repo import (
 )
 from packages.storage import InMemoryStorage, LocalFileStorage, R2Storage, StoragePort
 from services.api.adapters.clock import FakeClock, SystemClock
+from services.api.adapters.crypto import FernetTokenCipher, PlainTokenCipher
+from services.api.adapters.google.calendar import FakeCalendar, GoogleCalendar
+from services.api.adapters.google.oauth import FakeOAuth, GoogleOAuth
 from services.api.adapters.google.oidc import FakeGoogleOidc, GoogleOidc
 from services.api.adapters.http.app import create_app
 from services.api.adapters.jwt_issuer import HmacTokenIssuer
 from services.api.adapters.queue.import_consumer import ImportParseConsumer
+from services.api.adapters.role_model_client import (
+    FakeRoleModelClient,
+    RoleModelClient,
+    RoleModelClientPort,
+)
+from services.api.application.archive_plan import ArchivePlan
+from services.api.application.authorize_integration import AuthorizeIntegration
 from services.api.application.complete_import import CompleteImport
+from services.api.application.complete_integration import CompleteIntegration
 from services.api.application.create_plan_session import CreatePlanSession
+from services.api.application.delete_plan import DeletePlan
+from services.api.application.disconnect_integration import DisconnectIntegration
 from services.api.application.get_job import GetJob
+from services.api.application.get_plan import GetPlan
 from services.api.application.get_plan_session import GetPlanSession
 from services.api.application.get_profile import GetProfile
+from services.api.application.google_access_token import GoogleAccessTokenProvider
+from services.api.application.import_google_calendar import ImportGoogleCalendar
+from services.api.application.list_checkins import ListCheckins
 from services.api.application.list_imports import ListImports
+from services.api.application.list_integrations import ListIntegrations
+from services.api.application.list_plan_tasks import ListPlanTasks
+from services.api.application.list_plans import ListPlans
 from services.api.application.login_with_google import LoginWithGoogle
 from services.api.application.parse_import import ParseImport
-from services.api.application.ports import ClockPort, GoogleOidcPort, TokenIssuerPort
+from services.api.application.ports import (
+    CalendarPort,
+    ClockPort,
+    GoogleOAuthPort,
+    GoogleOidcPort,
+    TokenCipherPort,
+    TokenIssuerPort,
+)
 from services.api.application.presign_import import PresignImport
+from services.api.application.recommend_role_models import RecommendRoleModels
 from services.api.application.submit_answers import SubmitAnswers
+from services.api.application.submit_checkin import SubmitCheckin
+from services.api.application.update_plan import UpdatePlan
+from services.api.application.update_plan_task import UpdatePlanTask
 from services.api.application.update_profile import UpdateProfile
 from services.api.settings import ApiSettings
 
@@ -125,6 +156,10 @@ class ApiContainer:
     clock: ClockPort
     tokens: TokenIssuerPort
     oidc: GoogleOidcPort
+    google_oauth: GoogleOAuthPort
+    calendar: CalendarPort
+    cipher: TokenCipherPort
+    role_model_client: RoleModelClientPort
 
     # --- use cases (one field each) ---
     login_with_google: LoginWithGoogle
@@ -134,14 +169,39 @@ class ApiContainer:
     complete_import: CompleteImport
     list_imports: ListImports
     parse_import: ParseImport
+    recommend_role_models: RecommendRoleModels
     create_plan_session: CreatePlanSession
     get_plan_session: GetPlanSession
     submit_answers: SubmitAnswers
+    list_plans: ListPlans
+    get_plan: GetPlan
+    update_plan: UpdatePlan
+    archive_plan: ArchivePlan
+    delete_plan: DeletePlan
+    list_plan_tasks: ListPlanTasks
+    update_plan_task: UpdatePlanTask
+    submit_checkin: SubmitCheckin
+    list_checkins: ListCheckins
     get_job: GetJob
+    google_token_provider: GoogleAccessTokenProvider
+    authorize_integration: AuthorizeIntegration
+    complete_integration: CompleteIntegration
+    list_integrations: ListIntegrations
+    disconnect_integration: DisconnectIntegration
+    import_google_calendar: ImportGoogleCalendar
 
 
 def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
     """Build every use case from the already-assembled repos and ports."""
+    get_plan = GetPlan(parts["plans"], parts["plan_tasks"], parts["plan_exports"])
+    # Shared by every Google-facing use case so they hit one cache entry, not several.
+    google_token_provider = GoogleAccessTokenProvider(
+        parts["oauth_connections"],
+        parts["google_oauth"],
+        parts["cipher"],
+        parts["cache"],
+        parts["clock"],
+    )
     return {
         "login_with_google": LoginWithGoogle(
             parts["users"], parts["profiles"], parts["oidc"], parts["tokens"]
@@ -153,6 +213,7 @@ def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
             parts["imports"], parts["documents"], parts["storage"], parts["queue"]
         ),
         "list_imports": ListImports(parts["imports"], parts["documents"]),
+        "recommend_role_models": RecommendRoleModels(parts["profiles"], parts["role_model_client"]),
         "parse_import": ParseImport(
             parts["imports"], parts["documents"], parts["storage"], parts["parsers"]
         ),
@@ -171,7 +232,49 @@ def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
         "submit_answers": SubmitAnswers(
             parts["plan_sessions"], parts["followup_rounds"], parts["queue"], parts["clock"]
         ),
+        "list_plans": ListPlans(parts["plans"], parts["plan_tasks"]),
+        "get_plan": get_plan,
+        "update_plan": UpdatePlan(parts["plans"], parts["clock"], get_plan),
+        "archive_plan": ArchivePlan(parts["plans"], parts["clock"], get_plan),
+        "delete_plan": DeletePlan(parts["plans"], parts["plan_tasks"], get_plan),
+        "list_plan_tasks": ListPlanTasks(parts["plans"], parts["plan_tasks"], parts["profiles"]),
+        "update_plan_task": UpdatePlanTask(
+            parts["plans"],
+            parts["plan_tasks"],
+            parts["plan_exports"],
+            parts["queue"],
+            parts["clock"],
+        ),
+        "submit_checkin": SubmitCheckin(
+            parts["plans"],
+            parts["plan_tasks"],
+            parts["checkins"],
+            parts["plan_exports"],
+            parts["queue"],
+            parts["clock"],
+        ),
+        "list_checkins": ListCheckins(parts["plans"], parts["checkins"]),
         "get_job": GetJob(parts["cache"], parts["queue"]),
+        "google_token_provider": google_token_provider,
+        "authorize_integration": AuthorizeIntegration(parts["google_oauth"]),
+        "complete_integration": CompleteIntegration(
+            parts["oauth_connections"], parts["google_oauth"], parts["cipher"]
+        ),
+        "list_integrations": ListIntegrations(parts["oauth_connections"]),
+        "disconnect_integration": DisconnectIntegration(
+            parts["oauth_connections"],
+            parts["google_oauth"],
+            parts["cipher"],
+            parts["cache"],
+            parts["clock"],
+        ),
+        "import_google_calendar": ImportGoogleCalendar(
+            parts["imports"],
+            parts["documents"],
+            parts["calendar"],
+            google_token_provider,
+            parts["clock"],
+        ),
     }
 
 
@@ -219,6 +322,12 @@ def _build_storage(settings: ApiSettings) -> StoragePort:
 def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     """Production wiring: PostgreSQL repos + local storage + ARQ + Redis."""
     resolved = settings if settings is not None else ApiSettings()
+    if not resolved.oauth_token_enc_key:
+        raise ValueError(
+            "OAUTH_TOKEN_ENC_KEY must be set: refresh tokens are never stored unencrypted. "
+            'Generate one with `python -c "from cryptography.fernet import Fernet; '
+            'print(Fernet.generate_key().decode())"`.'
+        )
     session_factory = build_session_factory(build_engine(resolved.database_url))
     clock: ClockPort = SystemClock()
     parts: dict[str, Any] = {
@@ -244,6 +353,14 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         "clock": clock,
         "tokens": HmacTokenIssuer(resolved.jwt_secret, resolved.jwt_ttl_seconds, clock),
         "oidc": GoogleOidc(resolved.google_client_id, resolved.google_client_secret),
+        "google_oauth": GoogleOAuth(
+            resolved.google_client_id,
+            resolved.google_client_secret,
+            resolved.google_redirect_uri,
+        ),
+        "calendar": GoogleCalendar(),
+        "cipher": FernetTokenCipher(resolved.oauth_token_enc_key),
+        "role_model_client": RoleModelClient(resolved.role_model_base_url),
     }
     return _assemble(parts, {})
 
@@ -257,6 +374,7 @@ def _test_settings() -> ApiSettings:
         storage_backend="memory",
         storage_public_base_url="http://testserver/v1/files",
         storage_signing_secret="test-storage-secret",
+        oauth_token_enc_key="test-oauth-token-enc-key",
     )
 
 
@@ -291,6 +409,10 @@ def build_test_container(**overrides: Any) -> ApiContainer:
         "clock": clock,
         "tokens": HmacTokenIssuer(settings.jwt_secret, settings.jwt_ttl_seconds, clock),
         "oidc": FakeGoogleOidc(),
+        "google_oauth": FakeOAuth(),
+        "calendar": FakeCalendar(),
+        "cipher": PlainTokenCipher(),
+        "role_model_client": FakeRoleModelClient(),
     }
     # tokens is bound to the default clock; if the caller overrode only the clock, rebind it
     # so we do not keep issuing tokens against the old one.

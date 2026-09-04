@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 from httpx import ASGITransport, AsyncClient
 
 from packages.config import CONFIG_DIR
@@ -254,15 +253,23 @@ async def test_list_tags_groups_by_namespace(client: AsyncClient) -> None:
     }
 
 
-# --- tag vocab write-back ---------------------------------------------------
+# --- tag vocabulary ---------------------------------------------------------
 
 
-async def test_upsert_learns_new_values_into_vocab_file(
+async def test_new_tag_values_surface_through_the_tags_endpoint(client: AsyncClient) -> None:
+    """PRD 12.3 wants newly seen values discoverable; they come from the database,
+    not from a rewritten config file, so `config/tag_vocab.yaml` keeps its comments."""
+    await _create(client, _persona_body("new domain", ["domain:cooking", "goal:endurance"]))
+    tags = (await client.get("/role-models/tags")).json()
+    assert "cooking" in tags["domain"]
+
+
+async def test_upsert_never_rewrites_the_vocab_file(
     client: AsyncClient, tag_vocab_path: Path
 ) -> None:
-    await _create(client, _persona_body("new domain", ["domain:cooking", "goal:endurance"]))
-    vocab = yaml.safe_load(tag_vocab_path.read_text(encoding="utf-8"))
-    assert "cooking" in vocab["known_values"]["domain"]
+    before = tag_vocab_path.read_text(encoding="utf-8")
+    await _create(client, _persona_body("new domain 2", ["domain:sailing", "goal:endurance"]))
+    assert tag_vocab_path.read_text(encoding="utf-8") == before
 
 
 async def test_rejected_upsert_does_not_touch_vocab_file(

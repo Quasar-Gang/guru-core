@@ -63,7 +63,7 @@ from services.plan_engine.application.evaluate_session import EvaluateSession
 from services.plan_engine.application.generate_plans import GeneratePlans
 from services.plan_engine.application.ports import (
     ClockPort,
-    NullRoleModelRenderer,
+    MarkdownRoleModelRenderer,
     RoleModelRendererPort,
 )
 from services.plan_engine.domain.difficulty import DifficultyConfig, load_difficulty_config
@@ -238,10 +238,10 @@ def build_container(settings: PlanEngineSettings | None = None) -> PlanEngineCon
             NullObserver(),
             resolved.llm_fixtures_dir,
         ),
-        # Task 29 replaces this with an adapter over the Role Model service; a direct import
-        # of `services.role_model` would break the "services must not import each other"
-        # contract, so the port stays no-op until that adapter exists.
-        "renderer": NullRoleModelRenderer(),
+        # This service renders role model content itself: importing `services.role_model`
+        # would break the "services must not import each other" contract, and rendering
+        # locally keeps `plan_sessions.context_snapshot` reproducible without a network hop.
+        "renderer": MarkdownRoleModelRenderer(),
         **configs,
     }
     return _assemble(parts, {})
@@ -275,7 +275,7 @@ def build_test_container(**overrides: Any) -> PlanEngineContainer:
         "cache": DictCache(),
         "clock": FakeClock(datetime.now(UTC)),
         "llm": FakeLLM(settings.llm_fixtures_dir),
-        "renderer": NullRoleModelRenderer(),
+        "renderer": MarkdownRoleModelRenderer(),
         **_configs(),
     }
     return _assemble(parts, overrides)

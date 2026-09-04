@@ -5,6 +5,7 @@ from contextlib import contextmanager
 
 import boto3
 import pytest
+from cryptography.fernet import Fernet
 from moto import mock_aws
 
 from packages.storage import ObjectNotFound, R2Storage
@@ -94,6 +95,7 @@ def _r2_settings(bucket: str = BUCKET) -> ApiSettings:
         storage_backend="r2",
         storage_public_base_url="http://testserver/v1/files",
         storage_signing_secret="test-storage-secret",
+        oauth_token_enc_key=Fernet.generate_key().decode(),
         r2_account_id="test-account",
         r2_access_key_id=ACCESS_KEY_ID,
         r2_secret_access_key=SECRET_ACCESS_KEY,
