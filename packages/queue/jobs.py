@@ -6,7 +6,10 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict
 
 __all__ = [
+    "API_WORKER_QUEUE",
     "JOB_REGISTRY",
+    "PLAN_ENGINE_WORKER_QUEUE",
+    "WORKER_QUEUE_BY_JOB",
     "ExportJobV1",
     "ImportParseJobV1",
     "JobPayload",
@@ -79,4 +82,20 @@ JOB_REGISTRY: dict[str, type[JobPayload]] = {
         PlanReviseJobV1,
         ExportJobV1,
     )
+}
+
+
+#: Redis lists the workers poll. Two workers share one Redis, so they must not poll the
+#: same list: whoever pops a job first tries to run it, and a worker that has no handler
+#: for that job discards it with `JobExecutionFailed: function not found`. Keeping one
+#: list per deployable is what makes `import.parse` and `plan.generate` independent.
+API_WORKER_QUEUE = "arq:queue:api"
+PLAN_ENGINE_WORKER_QUEUE = "arq:queue:plan-engine"
+
+WORKER_QUEUE_BY_JOB: dict[str, str] = {
+    ImportParseJobV1.queue_name(): API_WORKER_QUEUE,
+    ExportJobV1.queue_name(): API_WORKER_QUEUE,
+    PlanGenerateJobV1.queue_name(): PLAN_ENGINE_WORKER_QUEUE,
+    PlanContinueJobV1.queue_name(): PLAN_ENGINE_WORKER_QUEUE,
+    PlanReviseJobV1.queue_name(): PLAN_ENGINE_WORKER_QUEUE,
 }

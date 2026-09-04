@@ -4,7 +4,10 @@ import pytest
 from pydantic import ValidationError
 
 from packages.queue import (
+    API_WORKER_QUEUE,
     JOB_REGISTRY,
+    PLAN_ENGINE_WORKER_QUEUE,
+    WORKER_QUEUE_BY_JOB,
     ExportJobV1,
     ImportParseJobV1,
     PlanContinueJobV1,
@@ -49,3 +52,20 @@ def test_literal_fields_are_validated():
         PlanReviseJobV1(plan_id=uuid4(), revision_id=uuid4(), strategy="nope")
     with pytest.raises(ValidationError):
         ExportJobV1(plan_id=uuid4(), target="dropbox", mode="full")
+
+
+def test_every_job_declares_a_worker_queue():
+    assert set(WORKER_QUEUE_BY_JOB) == set(JOB_REGISTRY)
+
+
+def test_the_two_deployables_use_different_queues():
+    """A shared list lets one worker pop a job it has no handler for and discard it."""
+    assert API_WORKER_QUEUE != PLAN_ENGINE_WORKER_QUEUE
+
+
+def test_api_jobs_and_engine_jobs_are_separated():
+    assert WORKER_QUEUE_BY_JOB["import.parse"] == API_WORKER_QUEUE
+    assert WORKER_QUEUE_BY_JOB["export.push"] == API_WORKER_QUEUE
+    assert WORKER_QUEUE_BY_JOB["plan.generate"] == PLAN_ENGINE_WORKER_QUEUE
+    assert WORKER_QUEUE_BY_JOB["plan.continue"] == PLAN_ENGINE_WORKER_QUEUE
+    assert WORKER_QUEUE_BY_JOB["plan.revise"] == PLAN_ENGINE_WORKER_QUEUE

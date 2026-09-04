@@ -2,7 +2,10 @@
 
 from packages.queue.arq_queue import ArqQueue
 from packages.queue.jobs import (
+    API_WORKER_QUEUE,
     JOB_REGISTRY,
+    PLAN_ENGINE_WORKER_QUEUE,
+    WORKER_QUEUE_BY_JOB,
     ExportJobV1,
     ImportParseJobV1,
     JobPayload,
@@ -15,6 +18,9 @@ from packages.queue.ports import JobHandle, JobStatus, QueuePort
 from packages.queue.worker import run_worker
 
 __all__ = [
+    "API_WORKER_QUEUE",
+    "PLAN_ENGINE_WORKER_QUEUE",
+    "WORKER_QUEUE_BY_JOB",
     "JOB_REGISTRY",
     "ArqQueue",
     "ExportJobV1",
