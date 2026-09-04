@@ -56,7 +56,11 @@ _TITLE_MAX_CHARS = 20
 # End-user facing product strings; kept in Chinese on purpose (global constraint 19).
 _SYSTEM_ASSUMPTION_HEADER = "以下項目為系統假設，建議補完後重新規劃"
 _NO_CALENDAR_ASSUMPTION = "未參考既有行事曆，只依你宣告的可用時段排程"
-_DEGRADED_ASSUMPTION = "模型輸出多次未通過檢查，已改用系統保守預設產生此計畫"
+#: The readiness pass exhausted its retries, so generation went ahead without a full
+#: picture. The plan itself still comes from the model.
+_READINESS_DEGRADED_ASSUMPTION = "追問階段未能問齊所需資訊，已依現有資料直接產生計畫"
+#: The plan template itself failed validation every time and was replaced (PRD 7.5).
+_TEMPLATE_DEGRADED_ASSUMPTION = "模型輸出多次未通過檢查，已改用系統保守預設產生此計畫"
 _FALLBACK_PHASE_NAMES = ("基礎期", "強化期", "鞏固期")
 _FALLBACK_PHASE_FOCUS = ("建立習慣與基本量", "逐步加量與提升強度", "穩定表現並驗收成果")
 _FALLBACK_SUCCESS_CRITERION = "完成計畫中 80% 以上的任務"
@@ -134,7 +138,11 @@ class GeneratePlans:
             )
             baseline = outcome.value.template
             shared = _shared_assumptions(
-                baseline, context, forced_missing, degraded or outcome.degraded
+                baseline,
+                context,
+                forced_missing,
+                readiness_degraded=degraded,
+                template_degraded=outcome.degraded,
             )
 
             new_plans: list[NewPlan] = []
@@ -265,17 +273,21 @@ def _shared_assumptions(
     baseline: PlanTemplate,
     context: SessionContext,
     forced_missing: Sequence[str],
-    degraded: bool,
+    *,
+    readiness_degraded: bool,
+    template_degraded: bool,
 ) -> list[str]:
     """The assumptions every difficulty shares (PRD 3.3, 3.4, 7.5)."""
     assumptions = list(baseline.assumptions)
     if not context.use_calendar:
         assumptions.append(_NO_CALENDAR_ASSUMPTION)
-    if forced_missing or degraded:
+    if forced_missing or readiness_degraded or template_degraded:
         assumptions.append(_SYSTEM_ASSUMPTION_HEADER)
     assumptions.extend(_MISSING_ASSUMPTION.format(item=item) for item in forced_missing)
-    if degraded:
-        assumptions.append(_DEGRADED_ASSUMPTION)
+    if readiness_degraded:
+        assumptions.append(_READINESS_DEGRADED_ASSUMPTION)
+    if template_degraded:
+        assumptions.append(_TEMPLATE_DEGRADED_ASSUMPTION)
     return _dedupe(assumptions)
 
 

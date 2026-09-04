@@ -127,3 +127,19 @@ async def test_session_ends_in_done() -> None:
     session = await c.sessions.get_unscoped(sid)
     assert session is not None
     assert session.status == "done"
+
+
+async def test_readiness_and_template_degradation_are_reported_separately() -> None:
+    """A readiness pass that gave up is not the same as the template being replaced.
+
+    Saying "the plan came from a conservative default" when the model actually produced
+    it would mislead the user about what they are looking at.
+    """
+    c, sid = await _ready_container()
+
+    await c.generate_plans(sid, forced_missing=["baseline"], degraded=True)
+
+    plan = (await c.plans.list_for_session(sid))[0]
+    assumptions = plan.structure["assumptions"]
+    assert any("追問階段未能問齊所需資訊" in a for a in assumptions)
+    assert not any("已改用系統保守預設" in a for a in assumptions)

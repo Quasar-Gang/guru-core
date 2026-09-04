@@ -388,6 +388,17 @@ def _build_storage(settings: ApiSettings) -> StoragePort:
     )
 
 
+def _build_oidc(settings: ApiSettings) -> GoogleOidcPort:
+    """Pick the sign-in adapter. `allow_fake_login` lets anyone log in as anyone.
+
+    It exists so `scripts/smoke.sh` can walk the happy path on a developer machine with no
+    Google credentials. Never enable it anywhere reachable from outside that machine.
+    """
+    if settings.allow_fake_login:
+        return FakeGoogleOidc(derive_from_code=True)
+    return GoogleOidc(settings.google_client_id, settings.google_client_secret)
+
+
 def build_container(settings: ApiSettings | None = None) -> ApiContainer:
     """Production wiring: PostgreSQL repos + local storage + ARQ + Redis."""
     resolved = settings if settings is not None else ApiSettings()
@@ -421,7 +432,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         "cache": RedisCache(resolved.redis_url),
         "clock": clock,
         "tokens": HmacTokenIssuer(resolved.jwt_secret, resolved.jwt_ttl_seconds, clock),
-        "oidc": GoogleOidc(resolved.google_client_id, resolved.google_client_secret),
+        "oidc": _build_oidc(resolved),
         "google_oauth": GoogleOAuth(
             resolved.google_client_id,
             resolved.google_client_secret,
@@ -444,6 +455,9 @@ def _test_settings() -> ApiSettings:
         storage_public_base_url="http://testserver/v1/files",
         storage_signing_secret="test-storage-secret",
         oauth_token_enc_key="test-oauth-token-enc-key",
+        # Off by default so the test suite is never throttled; tests that exercise the
+        # limiter pass their own settings with a positive budget.
+        rate_limit_per_minute=0,
     )
 
 

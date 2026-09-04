@@ -1,5 +1,6 @@
 """Queue adapters: widen the Plan Engine use cases to the handler signature ARQ expects."""
 
+from packages.logging import bind_job_id
 from packages.queue import JobPayload, PlanContinueJobV1, PlanGenerateJobV1, PlanReviseJobV1
 from services.plan_engine.application.evaluate_session import EvaluateSession
 from services.plan_engine.application.revise_plan import RevisePlan
@@ -22,7 +23,8 @@ class EvaluateSessionConsumer:
             raise TypeError(
                 f"expected PlanGenerateJobV1 or PlanContinueJobV1, got {type(payload).__name__}"
             )
-        await self._evaluate_session(payload)
+        with bind_job_id(str(payload.session_id)):
+            await self._evaluate_session(payload)
 
 
 class PlanReviseConsumer:
@@ -34,4 +36,5 @@ class PlanReviseConsumer:
     async def __call__(self, payload: JobPayload) -> None:
         if not isinstance(payload, PlanReviseJobV1):
             raise TypeError(f"expected PlanReviseJobV1, got {type(payload).__name__}")
-        await self._revise_plan(payload)
+        with bind_job_id(str(payload.plan_id)):
+            await self._revise_plan(payload)

@@ -33,4 +33,14 @@ class ApiSettings(BaseSettings):
 
     oauth_token_enc_key: str = ""
     role_model_base_url: str = "http://127.0.0.1:8001"
+
     llm_fixtures_dir: Path = Path("tests/fixtures/llm")
+
+    #: Requests allowed per caller per minute; 0 or less disables rate limiting entirely.
+    rate_limit_per_minute: int = 60
+
+    #: LOCAL SMOKE TESTING ONLY - NEVER ENABLE IN PRODUCTION.
+    #: When true, `POST /v1/auth/google` accepts `{"code": "fake:<email>"}` and signs the
+    #: caller in as that email without ever contacting Google, i.e. anyone can log in as
+    #: anyone. It exists so `scripts/smoke.sh` can run without real Google credentials.
+    allow_fake_login: bool = False

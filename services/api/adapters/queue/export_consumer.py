@@ -1,5 +1,6 @@
 """Queue adapter: widen `PushExport` to the generic handler signature the worker expects."""
 
+from packages.logging import bind_job_id
 from packages.queue import ExportJobV1, JobPayload
 from services.api.application.push_export import PushExport
 
@@ -15,4 +16,5 @@ class ExportPushConsumer:
     async def __call__(self, payload: JobPayload) -> None:
         if not isinstance(payload, ExportJobV1):
             raise TypeError(f"expected ExportJobV1, got {type(payload).__name__}")
-        await self._push_export(payload)
+        with bind_job_id(str(payload.plan_id)):
+            await self._push_export(payload)

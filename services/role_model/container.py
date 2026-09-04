@@ -14,11 +14,12 @@ from fastapi import FastAPI
 from packages.llm.config import LLMConfig, load_llm_config
 from packages.llm.factory import build_llm
 from packages.llm.fake import FakeLLM
-from packages.llm.observability import NullObserver
+from packages.llm.observability import DbLlmObserver
 from packages.llm.ports import LLMPort
 from packages.llm.prompts import PromptRegistry
 from packages.repo import (
     InMemoryRoleModelRepo,
+    PgLlmCallRepo,
     PgRoleModelRepo,
     RoleModelRepo,
     build_engine,
@@ -104,7 +105,7 @@ def build_container(settings: RoleModelSettings | None = None) -> RoleModelConta
     llm = build_llm(
         llm_config,
         PromptRegistry(PROMPTS_DIR),
-        NullObserver(),
+        DbLlmObserver(PgLlmCallRepo(session_factory)),
         settings.llm_fixtures_dir,
     )
     return _wire(settings, PgRoleModelRepo(session_factory), llm, llm_config)

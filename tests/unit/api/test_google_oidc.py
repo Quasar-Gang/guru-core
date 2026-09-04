@@ -77,3 +77,21 @@ async def test_fake_oidc_records_calls() -> None:
         google_sub="g1", email="a@b.c"
     )
     assert fake.calls == [("c", "http://cb")]
+
+
+async def test_fake_oidc_derives_the_identity_from_the_code() -> None:
+    fake = FakeGoogleOidc(derive_from_code=True)
+    identity = await fake.exchange_code("fake:smoke@example.com", "http://cb")
+    assert identity.email == "smoke@example.com"
+    assert (
+        identity.google_sub == (await fake.exchange_code("fake:smoke@example.com", "x")).google_sub
+    )
+    assert (
+        identity.google_sub != (await fake.exchange_code("fake:other@example.com", "x")).google_sub
+    )
+
+
+async def test_fake_oidc_rejects_a_code_without_the_prefix() -> None:
+    fake = FakeGoogleOidc(derive_from_code=True)
+    with pytest.raises(Unauthorized):
+        await fake.exchange_code("c", "http://cb")

@@ -19,7 +19,7 @@ from packages.cache import CachePort, DictCache, RedisCache
 from packages.llm.config import LLMConfig, load_llm_config
 from packages.llm.factory import build_llm
 from packages.llm.fake import FakeLLM
-from packages.llm.observability import NullObserver
+from packages.llm.observability import DbLlmObserver
 from packages.llm.ports import LLMPort
 from packages.llm.prompts import PromptRegistry
 from packages.queue import JobPayload
@@ -234,6 +234,7 @@ def build_container(settings: PlanEngineSettings | None = None) -> PlanEngineCon
     session_factory = build_session_factory(build_engine(resolved.database_url))
     configs = _configs()
     llm_config: LLMConfig = configs["llm_config"]
+    llm_calls = PgLlmCallRepo(session_factory)
     parts: dict[str, Any] = {
         "settings": resolved,
         "sessions": PgPlanSessionRepo(session_factory),
@@ -245,13 +246,13 @@ def build_container(settings: PlanEngineSettings | None = None) -> PlanEngineCon
         "documents": PgDocumentRepo(session_factory),
         "role_models": PgRoleModelRepo(session_factory),
         "profiles": PgProfileRepo(session_factory),
-        "llm_calls": PgLlmCallRepo(session_factory),
+        "llm_calls": llm_calls,
         "cache": RedisCache(resolved.redis_url),
         "clock": SystemClock(),
         "llm": build_llm(
             llm_config,
             PromptRegistry(resolved.prompts_dir),
-            NullObserver(),
+            DbLlmObserver(llm_calls),
             resolved.llm_fixtures_dir,
         ),
         # This service renders role model content itself: importing `services.role_model`
@@ -277,6 +278,7 @@ def build_test_container(**overrides: Any) -> PlanEngineContainer:
     Any field can be replaced by keyword, e.g. `build_test_container(llm=FakeLLM(...))`.
     """
     settings: PlanEngineSettings = overrides.get("settings") or _test_settings()
+    llm_calls = InMemoryLlmCallRepo()
     parts: dict[str, Any] = {
         "settings": settings,
         "sessions": InMemoryPlanSessionRepo(),
@@ -288,10 +290,12 @@ def build_test_container(**overrides: Any) -> PlanEngineContainer:
         "documents": InMemoryDocumentRepo(),
         "role_models": InMemoryRoleModelRepo(),
         "profiles": InMemoryProfileRepo(),
-        "llm_calls": InMemoryLlmCallRepo(),
+        "llm_calls": llm_calls,
         "cache": DictCache(),
         "clock": FakeClock(datetime.now(UTC)),
-        "llm": FakeLLM(settings.llm_fixtures_dir),
+        # The fake reports its calls too, so the observability wiring is exercised by the
+        # application tests instead of only by the production container.
+        "llm": FakeLLM(settings.llm_fixtures_dir, observer=DbLlmObserver(llm_calls)),
         "renderer": MarkdownRoleModelRenderer(),
         **_configs(),
     }

@@ -14,6 +14,7 @@ from services.api.adapters.http.files_router import router as files_router
 from services.api.adapters.http.imports_router import router as imports_router
 from services.api.adapters.http.integrations_router import router as integrations_router
 from services.api.adapters.http.jobs_router import router as jobs_router
+from services.api.adapters.http.middleware import RateLimitMiddleware
 from services.api.adapters.http.plan_sessions_router import router as plan_sessions_router
 from services.api.adapters.http.plans_router import router as plans_router
 from services.api.adapters.http.profile_router import router as profile_router
@@ -79,12 +80,21 @@ def create_app(container: ApiContainer) -> FastAPI:
     app = FastAPI(title="guru-core API", version="0.1.0")
     app.state.container = container
 
+    if container.settings.rate_limit_per_minute > 0:
+        app.add_middleware(
+            RateLimitMiddleware,
+            cache=container.cache,
+            tokens=container.tokens,
+            clock=container.clock,
+            limit=container.settings.rate_limit_per_minute,
+        )
+
     app.add_exception_handler(DomainError, _domain_error_handler)
     app.add_exception_handler(RequestValidationError, _validation_error_handler)
 
     @app.get("/health", tags=["ops"])
     async def health() -> dict[str, str]:
-        """Unauthenticated, and exempt from rate limiting once that lands."""
+        """Unauthenticated, and exempt from rate limiting."""
         return {"status": "ok"}
 
     app.include_router(auth_router, prefix=API_PREFIX)

@@ -2,6 +2,7 @@
 
 import base64
 import binascii
+import hashlib
 import json
 from typing import Any
 
@@ -10,9 +11,12 @@ import httpx
 from services.api.application.ports import GoogleIdentity
 from services.api.domain.errors import Unauthorized
 
-__all__ = ["GOOGLE_TOKEN_URL", "FakeGoogleOidc", "GoogleOidc"]
+__all__ = ["FAKE_CODE_PREFIX", "GOOGLE_TOKEN_URL", "FakeGoogleOidc", "GoogleOidc"]
 
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+
+#: Prefix of the authorization codes `FakeGoogleOidc(derive_from_code=True)` understands.
+FAKE_CODE_PREFIX = "fake:"
 
 
 def _decode_id_token_payload(id_token: str) -> dict[str, Any]:
@@ -86,12 +90,29 @@ class GoogleOidc:
 
 
 class FakeGoogleOidc:
-    """Test double: always returns the same identity and records the arguments it got."""
+    """Test double: returns a canned identity and records the arguments it got.
 
-    def __init__(self, identity: GoogleIdentity | None = None) -> None:
+    With `derive_from_code=True` a code of the form `fake:<email>` is turned into an
+    identity for that email, its `google_sub` being a hash of the address so the same
+    email always maps to the same user. That mode is what `scripts/smoke.sh` uses; see
+    `ApiSettings.allow_fake_login` for why it must never be enabled in production.
+    """
+
+    def __init__(
+        self, identity: GoogleIdentity | None = None, *, derive_from_code: bool = False
+    ) -> None:
         self.identity = identity or GoogleIdentity(google_sub="fake-sub", email="fake@example.com")
+        self.derive_from_code = derive_from_code
         self.calls: list[tuple[str, str]] = []
 
     async def exchange_code(self, code: str, redirect_uri: str) -> GoogleIdentity:
         self.calls.append((code, redirect_uri))
-        return self.identity
+        if not self.derive_from_code:
+            return self.identity
+        if not code.startswith(FAKE_CODE_PREFIX):
+            raise Unauthorized(f"fake login expects a code of the form {FAKE_CODE_PREFIX}<email>")
+        email = code.removeprefix(FAKE_CODE_PREFIX)
+        if not email:
+            raise Unauthorized("fake login code carries no email")
+        digest = hashlib.sha256(email.encode("utf-8")).hexdigest()[:32]
+        return GoogleIdentity(google_sub=f"fake-{digest}", email=email)

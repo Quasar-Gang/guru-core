@@ -26,7 +26,9 @@ def build_llm(
     if adapter == "fake":
         if fixtures_dir is None:
             raise LLMError("fake adapter requires fixtures_dir")
-        return FakeLLM(fixtures_dir)
+        # The fake reports its calls too, so running a service on LLM_ADAPTER=fake still
+        # fills `llm_calls` and the observability wiring is exercised end to end.
+        return FakeLLM(fixtures_dir, observer=observer)
     if adapter == "openai_compat":
         return OpenAICompatLLM(config, prompts, observer)
     return AnthropicLLM(config, prompts, observer)
