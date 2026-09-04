@@ -36,7 +36,8 @@
     - Redis 7 @ `127.0.0.1:6379`（**注意：不是 6397**）。
     - 物件儲存：**MVP 不接 Cloudflare R2**。`StoragePort` 的正式實作是 `LocalFileStorage`（寫本機目錄，presign 回本地 API 的簽章 URL）。`R2Storage` 於 M5 補上，屆時只改 `container.py` 與環境變數，不動任何 use case。
 17. **LLM**：開發與測試一律用 `FakeLLM`（讀 `tests/fixtures/llm/`）。`OpenAICompatLLM` / `AnthropicLLM` 需實作並有以 mock transport 為基礎的測試，但不在 CI 打外網。
-18. **每個 service 與 package 根目錄一份 `README.md`**，只回答三個問題：負責什麼、對外 port 有哪些、不負責什麼。
+18. **`domain` 層引用 `packages.llm` 時只能 import 子模組**：寫 `from packages.llm.ports import Purpose`，不可寫 `from packages.llm import Purpose`。因為 `packages/llm/__init__.py` 會 eager import `openai_compat`（進而拉入 `httpx`），走根模組會讓 import-linter 的 `domain-pure` 契約失敗。`application` 層同理。
+19. **每個 service 與 package 根目錄一份 `README.md`**，只回答三個問題：負責什麼、對外 port 有哪些、不負責什麼。
 
 ---
 

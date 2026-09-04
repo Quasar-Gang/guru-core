@@ -1,0 +1,8 @@
+# Google Calendar colorId 對應（PRD 4.3.4）。同類任務同色。
+default: "8"
+by_task_type:
+  session: "9"
+  habit: "2"
+  checkpoint: "11"
+  rest: "8"
+by_template_key: {}

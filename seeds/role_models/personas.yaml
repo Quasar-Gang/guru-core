@@ -1,0 +1,369 @@
+# 角色卡類 seed（PRD 14.2 P1–P9）。name 與 tags 逐格照 PRD 表格。
+# sections 寫「做法」而非「生平」——Plan Engine 只用得到可執行的方法論。
+# 這只是起始樣本，後續由團隊透過 POST /role-models 維護。
+role_models:
+  - kind: persona
+    name: Stephen Curry 型
+    tags: [domain:fitness, goal:skill, method:high-reps, level:intermediate,
+           cadence:daily, horizon:months, persona:basketball]
+    content:
+      summary: 以高重複次數的專項技術練習堆疊肌肉記憶，用每週命中率當作唯一進度指標。
+      sections:
+        principles:
+          - 每天固定完成一份可計數的投籃量，寧可分次也不跳過。
+          - 每一球都記錄進出，練習量沒有數字就不算數。
+          - 從定點近距離開始，命中率達標才往外推一個距離帶。
+          - 練習前先做球感與運球熱身，讓手感在正式計數前就進入狀態。
+          - 疲勞時降低距離與球數，但不改變每天出手的習慣。
+        weekly_structure: >
+          一週六天：四天技術日（熱身 10 分 + 定點投籃 200–300 球 + 移動接球投籃 100 球），
+          兩天結合日（運球後急停跳投與對抗下出手），週日只做輕度投籃手感練習。
+          每天結束前記下各距離帶的命中數與出手數。
+        progress_metrics:
+          - 各距離帶的命中率逐週變化（以每週總出手數為分母）
+          - 每次練習完成的總出手數是否穩定達標
+          - 移動接球投籃相對定點投籃的命中率差距是否縮小
+        pitfalls:
+          - 只追求出手數量、不記錄命中率，練了三個月卻無從判斷有無進步。
+          - 命中率還沒穩定就急著往後退到更遠距離，姿勢跟著走樣。
+          - 只練定點投籃，實戰中的移動接球與急停跳投完全沒練到。
+          - 手腕或肩膀出現疼痛仍照表操課，導致長期停練。
+        applicability:
+          good_for: [想提升投籃穩定度的球員, 每天能撥出 45 分鐘練球者, 有固定球場可用者]
+          not_for: [沒有場地與球具者, 目標是體能或增肌者, 每週只能練一到兩次者]
+        example_milestones:
+          - 第 4 週：定點中距離命中率達 45%，單次練習穩定完成 300 次出手
+          - 第 8 週：三分線定點命中率達 35%，連續 6 週未中斷每日練習
+          - 第 12 週：移動接球投籃命中率與定點差距縮小到 5 個百分點以內
+      provenance:
+        sources:
+          - title: 公開報導與訪談整理的專項技術訓練原則
+            url: https://example.com/placeholder
+            accessed_at: 2026-09-05
+        confidence: medium
+        author: guru team
+        notes: 取公開可查證的訓練原則，不含個人生平與未公開細節
+
+  - kind: persona
+    name: Eliud Kipchoge 型
+    tags: [domain:fitness, goal:endurance, method:periodization, method:80-20,
+           level:intermediate, cadence:5x-week, horizon:months, persona:running,
+           persona:marathon]
+    content:
+      summary: 八成訓練量放在輕鬆配速，靠週期化與每週一次長距離累積耐力。
+      sections:
+        principles:
+          - 八成的訓練量以能邊跑邊講話的輕鬆配速進行。
+          - 每週只安排一到兩次高強度課表，其餘全是輕鬆跑。
+          - 訓練量以週為單位漸進，每次增量不超過前一週的一成。
+          - 恢復與睡眠視為訓練的一部分，不是有空才做。
+        weekly_structure: >
+          一週五次：三次輕鬆跑（30–50 分）、一次強度課（間歇或節奏跑）、
+          一次長距離慢跑（週末，時間逐週延長）。其餘兩天完全休息或輕度伸展。
+        progress_metrics:
+          - 同一配速下的心率逐週下降
+          - 長距離跑的持續時間逐週增加
+          - 每四週一次固定距離計時，比較完成時間
+        pitfalls:
+          - 輕鬆跑跑太快，導致沒有真正的恢復日
+          - 週跑量增加過快造成脛骨或膝蓋疼痛
+          - 只練長距離、忽略強度課，配速停滯
+        applicability:
+          good_for: [想首馬完賽者, 想突破 5K/10K 個人紀錄者, 每週能跑四次以上者]
+          not_for: [有未癒合下肢傷勢者, 每週只能運動兩次者, 主要目標是增肌者]
+        example_milestones:
+          - 第 4 週：能連續慢跑 45 分鐘不停
+          - 第 8 週：完成一次 12 公里長距離
+          - 第 12 週：5 公里計時較起始成績進步 8% 以上
+      provenance:
+        sources:
+          - title: 公開報導與訪談整理的耐力訓練原則
+            url: https://example.com/placeholder
+            accessed_at: 2026-09-05
+        confidence: medium
+        author: guru team
+        notes: 取公開可查證的訓練原則，不含個人生平與未公開細節
+
+  - kind: persona
+    name: 上班族減脂型
+    tags: [domain:fitness, goal:fat-loss, method:periodization, level:beginner,
+           cadence:5x-week, horizon:months, constraint:no-gym]
+    content:
+      summary: 每週三次肌力加兩次有氧，配合每日蛋白質目標，以雙週量測判斷方向。
+      sections:
+        principles:
+          - 熱量赤字靠飲食控制，運動負責保住肌肉與提高活動量。
+          - 每日蛋白質吃到體重每公斤 1.6 公克，先顧蛋白再談其他。
+          - 肌力訓練優先安排，有氧是補足熱量消耗的配角。
+          - 用雙週平均體重判斷趨勢，不看單日數字做決定。
+          - 每天走路步數設下限，把非運動性活動當成減脂的一部分。
+        weekly_structure: >
+          一週五次：三次徒手或啞鈴全身肌力（各 40 分，下肢、推、拉輪替），
+          兩次有氧（快走或慢跑 30 分，可安排在肌力日隔天）。
+          每天量早晨空腹體重、記錄飲食，週日花 15 分鐘備餐與回顧。
+        progress_metrics:
+          - 雙週平均體重的變化幅度（目標每週下降 0.5–1%）
+          - 腰圍每兩週量一次的變化
+          - 主要動作的次數或負重是否維持或提升（確認沒掉肌肉）
+        pitfalls:
+          - 赤字開太大，兩三週後暴食反彈並流失肌肉。
+          - 只做有氧不做肌力，體重下降但體態與代謝變差。
+          - 每天量體重卻被水分波動影響情緒，提早放棄。
+          - 週間執行良好、週末兩天完全放縱，整週赤字歸零。
+        applicability:
+          good_for: [久坐上班族, 家中訓練無健身房者, 想在三到六個月內明顯減脂者]
+          not_for: [有飲食失調病史者, 目標是最大肌力者, 無法自行控制飲食記錄者]
+        example_milestones:
+          - 第 4 週：連續 4 週達成每日蛋白質目標，體重下降 2%
+          - 第 8 週：腰圍減少 3 公分，深蹲可連續完成 20 下
+          - 第 12 週：體重較起始下降 6–8%，肌力動作次數未退步
+      provenance:
+        sources: []
+        confidence: medium
+        author: guru team
+        notes: 團隊自訂的執行方案，非特定人物，依常見減脂原則整理
+
+  - kind: persona
+    name: Steve Kaufmann 型
+    tags: [domain:learning, goal:language, method:comprehensible-input,
+           level:beginner, cadence:daily, horizon:years]
+    content:
+      summary: 靠大量可理解輸入累積語感，每日聽讀不中斷，不背文法規則。
+      sections:
+        principles:
+          - 每天累積聽與讀的時數，輸入量才是決定進度的變數。
+          - 材料選懂得七到八成的難度，太難就換簡單一點的。
+          - 遇到生字先標記、繼續讀完，不中斷閱讀流去查每個字。
+          - 文法在大量輸入後自然浮現，不從規則表開始背。
+          - 同一篇材料重複聽讀多次，比一直換新材料更有效。
+        weekly_structure: >
+          每天固定 60 分：30 分聽（通勤或散步時聽已讀過的材料），
+          20 分讀（邊讀邊標記生字），10 分複習當週標記過的字詞。
+          每週挑一天把該週材料重聽一次，並更新已知字數統計。
+        progress_metrics:
+          - 每週累積的聽讀時數
+          - 每週新標記與轉為已知的字詞數量
+          - 同一篇材料重讀時需要查的生字數是否下降
+        pitfalls:
+          - 材料選得太難，每句都要查字典，最後放棄。
+          - 花大量時間整理筆記與工具，實際輸入時數卻很少。
+          - 太早強迫自己開口，因挫折感中斷每日輸入。
+          - 頻繁換材料與換 App，缺乏重複帶來的鞏固效果。
+        applicability:
+          good_for: [語言零基礎起步者, 每天有通勤時間可聽材料者, 目標是長期流利而非速成者]
+          not_for: [三個月內要考檢定者, 只想練口說發音者, 無法每天固定投入者]
+        example_milestones:
+          - 第 4 週：累積聽讀 25 小時，已知字詞達 1000
+          - 第 12 週：累積聽讀 80 小時，能讀懂初級讀本不查字典
+          - 第 24 週：已知字詞達 5000，能聽懂慢速新聞主要內容
+      provenance:
+        sources:
+          - title: 公開報導與訪談整理的語言學習原則
+            url: https://example.com/placeholder
+            accessed_at: 2026-09-05
+        confidence: medium
+        author: guru team
+        notes: 取公開可查證的學習原則，不含個人生平與未公開細節
+
+  - kind: persona
+    name: Scott Young 型
+    tags: [domain:learning, goal:programming, goal:skill, method:project-based,
+           level:intermediate, cadence:daily, horizon:months]
+    content:
+      summary: 先拆出技能地圖，直接練最接近目標的任務，以專案產出驗收成果。
+      sections:
+        principles:
+          - 開始前先把目標技能拆成可練的子技能清單。
+          - 練習內容要盡量貼近真實使用情境，而不是抽象教材。
+          - 每個學習區塊都要有產出，看得到的成品才算完成。
+          - 卡住的子技能拉出來單獨鑽研，補完再放回專案。
+          - 每週回顧一次進度並調整技能地圖的優先順序。
+        weekly_structure: >
+          一週六天，每天 90 分：前 20 分針對本週指定的弱項做刻意練習，
+          後 70 分推進當前專案。週三與週六各留 15 分做自我測驗，
+          週日花 30 分回顧產出、更新技能地圖與下週優先項。
+        progress_metrics:
+          - 每兩週完成的專案功能或產出數量
+          - 技能地圖上已標記為掌握的子技能比例
+          - 自我測驗中無需查資料即可完成的題目比例
+        pitfalls:
+          - 只看教學影片與課程，沒有實際動手產出。
+          - 技能地圖拆得過細，光是規劃就耗掉大半時間。
+          - 專案選得太大，數週看不到可交付的成果而失去動力。
+          - 遇到卡點就換新主題，累積一堆半成品。
+        applicability:
+          good_for: [已有基礎想快速上手新技能者, 能自主安排學習時間者, 目標明確可用專案驗收者]
+          not_for: [完全零基礎需系統教材者, 每週投入不到三小時者, 目標是應付選擇題考試者]
+        example_milestones:
+          - 第 4 週：完成技能地圖並交付第一個可運行的小專案
+          - 第 8 週：完成中型專案的核心功能，掌握半數以上子技能
+          - 第 12 週：交付一個可對外展示的完整專案，並寫出實作說明
+      provenance:
+        sources:
+          - title: 公開報導與訪談整理的技能學習原則
+            url: https://example.com/placeholder
+            accessed_at: 2026-09-05
+        confidence: medium
+        author: guru team
+        notes: 取公開可查證的學習原則，不含個人生平與未公開細節
+
+  - kind: persona
+    name: 在職考證照型
+    tags: [domain:learning, goal:exam, method:spaced-repetition, level:beginner,
+           cadence:5x-week, horizon:months, constraint:fixed-deadline]
+    content:
+      summary: 前三分之二時間讀完範圍，後三分之一全部做題，每週一次全真模擬考。
+      sections:
+        principles:
+          - 從考試日回推排程，範圍讀完的死線設在總時程的三分之二處。
+          - 每天固定時段讀書，寧可短也要天天到，避免週末補進度。
+          - 讀過的重點當天就做成題卡，用間隔重複安排複習。
+          - 錯題一律回填題卡，同一個錯誤不允許出現第三次。
+          - 進入衝刺期後只做題與複習錯題，不再讀新內容。
+        weekly_structure: >
+          週一到週五每天 90 分：60 分讀新進度、20 分複習到期題卡、10 分整理錯題。
+          週六做一次限時模擬考並批改，週日花 60 分只檢討錯題與補齊題卡，其餘休息。
+        progress_metrics:
+          - 每週模擬考的分數趨勢與距離及格線的差距
+          - 已讀範圍佔總範圍的百分比是否符合排程
+          - 錯題複習後的再錯率
+        pitfalls:
+          - 讀書進度落後卻不調整排程，最後三分之一沒時間做題。
+          - 只讀不做題，考場上看得懂卻寫不完。
+          - 錯題只打勾不整理，同類型題目反覆錯。
+          - 平日加班就整週停擺，複習節奏一斷就難以重啟。
+        applicability:
+          good_for: [已報名有明確考期者, 平日仍在職每天只有一到兩小時者, 考科以記憶與題型為主者]
+          not_for: [尚未決定考期者, 需大量實作技能的考試, 每週無法固定五天讀書者]
+        example_milestones:
+          - 第 4 週：完成範圍的 40%，題卡累積 300 張且到期複習不積壓
+          - 第 8 週：讀完全部範圍，第一次全真模擬考達及格線 80%
+          - 第 12 週：連續三次模擬考超過及格線，錯題再錯率低於 10%
+      provenance:
+        sources: []
+        confidence: medium
+        author: guru team
+        notes: 團隊自訂的執行方案，非特定人物，依常見備考原則整理
+
+  - kind: persona
+    name: Warren Buffett 型
+    tags: [domain:investing, goal:wealth-building, method:value-investing,
+           level:advanced, cadence:weekly-review, horizon:years]
+    content:
+      summary: 只投自己看得懂的生意，買進後長期持有，每年檢視一次基本面。
+      sections:
+        principles:
+          - 只買自己能用幾句話說清楚商業模式的標的。
+          - 先估算內在價值，再等價格出現足夠的安全邊際才買。
+          - 買進理由沒有改變就繼續持有，不因股價波動賣出。
+          - 手上永遠保留現金部位，等機會出現而不是隨時滿倉。
+          - 決策前寫下買進理由與賣出條件，事後可回頭對照。
+        weekly_structure: >
+          每週固定 3 小時：2 小時閱讀財報、年報與產業資料，
+          1 小時更新觀察名單與估值表。週檢只更新資料與檢查是否觸發賣出條件，
+          不做買賣決策；買賣只在估值明顯偏離時進行。
+        progress_metrics:
+          - 觀察名單中完成完整估值紀錄的標的數量
+          - 投資組合的年化報酬與參考指數的差距
+          - 每筆持股的買進理由是否仍然成立（每季核對一次）
+        pitfalls:
+          - 買進理由寫得含糊，跌下來時無法判斷該不該續抱。
+          - 把「跌很多」當成便宜，忽略基本面已經改變。
+          - 過度集中在少數標的，單一判斷失誤造成重大損失。
+          - 耐不住空手期，在沒有安全邊際時勉強進場。
+        applicability:
+          good_for: [願意花時間讀財報者, 資金可長期不動用五年以上者, 能承受帳面波動者]
+          not_for: [投資新手無估值基礎者, 需要短期變現者, 無法忍受長期空手等待者]
+        example_milestones:
+          - 第 12 週：建立 10 檔標的的觀察名單，每檔皆有書面估值與買進價位
+          - 第 24 週：完成至少 3 檔的完整投資紀錄（買進理由與賣出條件）
+          - 第 52 週：完成一次全組合年度檢視，淘汰買進理由已不成立的持股
+      provenance:
+        sources:
+          - title: 公開報導與訪談整理的價值投資原則
+            url: https://example.com/placeholder
+            accessed_at: 2026-09-05
+        confidence: medium
+        author: guru team
+        notes: 取公開可查證的投資原則，不含個人生平與未公開細節
+
+  - kind: persona
+    name: John Bogle 型
+    tags: [domain:investing, goal:wealth-building, method:dca, level:beginner,
+           cadence:weekly-review, horizon:years]
+    content:
+      summary: 買低成本指數型商品、定期定額投入，股債比例隨年齡逐步調整。
+      sections:
+        principles:
+          - 用低成本的廣泛指數型商品取代個股挑選。
+          - 每月固定日期投入固定金額，不預測市場時機。
+          - 總費用率越低越好，成本是唯一能事先確定的變數。
+          - 股債比例依年齡與風險承受度設定，只在偏離時再平衡。
+          - 市場下跌時照原計畫買進，不暫停也不加碼。
+        weekly_structure: >
+          每週 20 分：確認自動扣款與資金到位、記錄本週淨值。
+          每月固定日執行一次定期定額投入；每季花 30 分檢查股債比例，
+          偏離目標超過五個百分點才再平衡；除此之外不操作。
+        progress_metrics:
+          - 每月投入是否 100% 按計畫執行（不中斷、不加碼）
+          - 投資組合的總費用率是否維持在設定上限以下
+          - 股債實際比例與目標比例的偏離幅度
+        pitfalls:
+          - 市場大跌時暫停扣款，錯過成本最低的買進期間。
+          - 追逐熱門主題型商品，推高費用率也拉高集中度。
+          - 頻繁查看帳戶淨值，被短期波動誘導出手。
+          - 從不再平衡，多年後股票比重遠高於原本設定。
+        applicability:
+          good_for: [投資新手, 沒有時間研究個股者, 資金可放十年以上者]
+          not_for: [想在一兩年內取用資金者, 追求超越大盤報酬者, 無法接受帳面下跌者]
+        example_milestones:
+          - 第 4 週：完成帳戶開立與自動扣款設定，寫下目標股債比例
+          - 第 24 週：連續 6 個月定期定額未中斷，總費用率低於 0.3%
+          - 第 52 週：完成一次再平衡，年度投入金額達成原定計畫的 100%
+      provenance:
+        sources:
+          - title: 公開報導與訪談整理的指數化投資原則
+            url: https://example.com/placeholder
+            accessed_at: 2026-09-05
+        confidence: medium
+        author: guru team
+        notes: 取公開可查證的投資原則，不含個人生平與未公開細節
+
+  - kind: persona
+    name: 存第一桶金型
+    tags: [domain:investing, goal:saving, method:budgeting, level:beginner,
+           cadence:weekly-review, horizon:years, constraint:low-capital]
+    content:
+      summary: 先補滿緊急預備金，維持固定儲蓄率，達標後才轉入定期定額投資。
+      sections:
+        principles:
+          - 收入進帳當天先轉存儲蓄，剩下的才是可花的錢。
+          - 儲蓄率設成收入的固定百分比，加薪時同步提高。
+          - 緊急預備金存滿六個月生活費之前，不投入風險性資產。
+          - 儲蓄帳戶與日常帳戶分離，降低動用的方便性。
+          - 每週對一次帳，只看三個數字：收入、支出、結餘。
+        weekly_structure: >
+          每週 30 分對帳：15 分記錄與分類本週支出、10 分比對月度預算剩餘額度、
+          5 分更新儲蓄進度表。發薪日當天執行自動轉帳；每月最後一週花 30 分
+          檢視固定支出並砍掉未使用的訂閱。
+        progress_metrics:
+          - 每月實際儲蓄率與目標儲蓄率的差距
+          - 緊急預備金已存月數（目標六個月生活費）
+          - 固定支出佔收入的比例是否逐月下降
+        pitfalls:
+          - 先花再存，月底剩多少才存，導致儲蓄率長期不穩定。
+          - 目標訂得太緊，壓縮生活品質後報復性消費。
+          - 緊急預備金尚未存滿就急著投資，遇到意外只好認賠贖回。
+          - 只記帳不設預算上限，看得到花費卻改不了行為。
+        applicability:
+          good_for: [剛出社會有穩定薪資者, 尚無緊急預備金者, 想先建立現金流習慣者]
+          not_for: [收入極不穩定者, 已有高利率負債待清償者, 已有充足預備金想直接投資者]
+        example_milestones:
+          - 第 4 週：完成三個月支出盤點，設定並執行每月 20% 自動儲蓄
+          - 第 24 週：緊急預備金累積達 3 個月生活費，固定支出降低 10%
+          - 第 52 週：緊急預備金達 6 個月生活費，開始每月定期定額投入
+      provenance:
+        sources: []
+        confidence: medium
+        author: guru team
+        notes: 團隊自訂的執行方案，非特定人物，依常見理財原則整理

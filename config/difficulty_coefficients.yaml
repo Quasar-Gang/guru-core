@@ -1,0 +1,17 @@
+# 難度推導係數（PRD 4.3.1.1）。LLM 只產一份基準模板，三份由程式依這裡的係數推導。
+coefficients:
+  easy:
+    frequency: 0.6
+    duration: 0.75
+    weeks: 1.25
+    title_suffix: "（輕鬆）"
+  hard:
+    frequency: 1.0
+    duration: 1.0
+    weeks: 1.0
+    title_suffix: "（穩健）"
+  extremely_hard:
+    frequency: 1.3
+    duration: 1.25
+    weeks: 0.85
+    title_suffix: "（挑戰）"

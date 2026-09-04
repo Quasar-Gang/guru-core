@@ -1,0 +1,77 @@
+version: 2
+max_followup_rounds: 2
+max_questions_per_round: 5
+options_per_question: 3
+ask_order: [required, domain_probe, helpful]
+
+required:
+  - id: goal_outcome
+    name: 目標與達成標準
+    fills: goal_statement, success_criteria
+    check: 有明確結果與可判斷達成的標準（數字、事件或可驗證狀態）
+    bad_example: 我想變強壯 / 我想學英文
+    good_example: 三個月內 5 公里跑進 30 分 / 半年內多益 750
+  - id: horizon
+    name: 期程
+    fills: duration_weeks, phases
+    check: 有截止日或大致期程；或明確表示「無期限、想穩定進行」（此時預設 12 週）
+  - id: capacity
+    name: 每週投入量與可用時段
+    fills: weekly_template.day_hint / slot_hint / duration_minutes
+    check: 同時知道「每週幾次」「每次多久」「大致什麼時段」；三者缺一都算未滿足
+  - id: baseline
+    name: 目前起點
+    fills: phases[].milestone.metric
+    check: 對目標領域的現況有描述，最好有數字（目前 5K 38 分 / 多益 550 / 每月可存 1 萬）
+
+domain_probe:
+  id: domain_specific
+  name: 領域關鍵前提
+  max_items: 2
+  instruction: |
+    依用戶目標判斷：這個領域若不先問清楚，產出的計畫可能無效、無法執行或造成傷害。
+    只挑最多 2 項最關鍵的，且必須是 required 與 helpful 未涵蓋的。
+    問法與其他追問一致：三個依 context 客製的選項，可 skip 或自由回答。
+  examples_for_llm:
+    - 目標涉及體能訓練 → 是否有傷病或醫囑限制、有無場地器材
+    - 目標涉及資金配置 → 可投入金額、能接受的最大回撤
+    - 目標涉及考試 → 考試日期是否已定、是否已報名
+    - 目標涉及作品產出 → 產出形式與發表管道
+  note: 不預先列舉領域；LLM 判斷不出來就回空陣列
+
+helpful:
+  - id: existing_schedule
+    name: 既有行程
+    check: 已連結 Calendar，或用戶自行描述固定行程
+    default: 只用用戶宣告的可用時段排程
+    note: 未連結 Calendar 時永遠未滿足，但不追問，只在 assumptions[] 標註
+  - id: difficulty_preference
+    name: 強度偏好
+    check: 想衝刺還是穩定累積、能接受多大程度的生活改變
+    default: 中等強度；三份難度仍照 Easy / Hard / Extremely hard 產出
+  - id: accountability
+    name: 督促方式
+    check: 需要提醒、打卡、夥伴，還是自律即可
+    default: 每日提醒 + 每週回顧
+  - id: time_method
+    name: 慣用時間管理法
+    check: 番茄鐘、時間塊、每日 top-3 等
+    default: 時間塊
+  - id: past_attempts
+    name: 過去嘗試
+    check: 試過什麼、為何中斷
+    default: 假設首次嘗試
+  - id: constraints
+    name: 一般限制
+    check: 出差、季節、預算、家庭等會影響排程的固定因素
+    default: 假設無特殊限制
+  - id: role_model_fit
+    name: 角色卡契合
+    check: 所選角色卡的 tags 與目標有交集
+    default: 忽略角色卡，只依目標與特質生成
+
+ready_rule: 四項 required 全部滿足即 ready；domain_probe 與 helpful 不阻擋
+force_generate_rule: |
+  追問輪數用完仍不 ready 時，required 缺項以最保守假設補上（期程預設 12 週、
+  capacity 預設每週 3 次 × 30 分、起點預設初學），全部寫進 assumptions[]，
+  並在計畫開頭提示「以下項目為系統假設，建議補完後重新規劃」。

@@ -1,0 +1,34 @@
+version: 1
+mode: lenient          # lenient：prefix 白名單，值自由；strict：值也要在清單內（之後再切）
+
+namespaces:            # 白名單，prefix 不在此清單一律拒絕寫入
+  - domain             # 硬過濾
+  - goal               # 硬過濾
+  - method             # 軟匹配
+  - level              # 軟匹配
+  - cadence            # 軟匹配
+  - horizon            # 軟匹配
+  - constraint         # 硬排除
+  - persona            # 顯示與同義，不參與過濾
+
+value_rules:
+  pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"   # 小寫、數字、連字號
+  max_length: 32
+  max_tags_per_record: 12
+
+enum_only:             # 這幾個命名空間的值仍受限，因為程式會拿來計分
+  level: [beginner, intermediate, advanced]
+  horizon: [weeks, months, years]
+  cadence: [daily, 3x-week, 5x-week, weekly-review, monthly-review]
+
+known_values:          # 只是紀錄，寫入新值會自動追加，供前端篩選與寫入提示
+  domain: [fitness, learning, investing]
+  goal: [fat-loss, muscle, endurance, skill, exam, language, programming, saving, wealth-building]
+  method: [periodization, high-reps, 80-20, comprehensible-input, project-based,
+           spaced-repetition, dca, value-investing, budgeting]
+  constraint: [no-gym, injury-sensitive, low-capital, fixed-deadline, no-equipment]
+  persona: []          # 自由文字，不記錄
+
+required_tags:
+  persona: [domain, goal]    # 角色卡至少要有 domain: 與一個 goal:
+  trait: []                  # 特質類不強制

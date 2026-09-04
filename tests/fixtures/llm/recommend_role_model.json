@@ -1,0 +1,19 @@
+{
+  "recommendations": [
+    {
+      "role_model_id": "9f1c1f0c-4f7a-4a1e-9b3f-6a1f2a3b4c5d",
+      "name": "Eliud Kipchoge 型",
+      "reason": "你每週只能練 3 次且目標是 5K 耐力，這張卡的 80/20 低強度安排最不容易讓你受傷中斷。"
+    },
+    {
+      "role_model_id": "2b7d3a54-1c8e-4b62-9a41-7d0e5c9b8f21",
+      "name": "上班族減脂型",
+      "reason": "你是平日晚上才有空的上班族，這張卡的 3 肌力 + 2 有氧安排剛好塞得進你的可用時段。"
+    },
+    {
+      "role_model_id": "5e4a2c18-9b3d-4f7a-8c26-1d3b6e0a7f94",
+      "name": "Scott Young 型",
+      "reason": "你希望以可驗收的產出推進，這張卡先拆技能地圖再直接練目標任務的做法，能讓每週都有明確驗收點。"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+# smoke test：讀設定 → build_llm → 呼叫一次 smoke prompt → 印出 provider/model/耗時/token。
+import asyncio
+import time
+from pathlib import Path
+
+from pydantic import BaseModel, ConfigDict
+
+from packages.llm import LlmCallLog, PromptRegistry, Purpose, load_llm_config
+from packages.llm.factory import build_llm
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+class SmokeOut(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+
+class _Collector:
+    async def record(self, log: LlmCallLog) -> None:
+        print(log.model_dump_json())
+
+
+async def _main() -> None:
+    config = load_llm_config()
+    prompts = PromptRegistry(ROOT / "packages" / "llm" / "prompts")
+    llm = build_llm(config, prompts, _Collector(), ROOT / "tests" / "fixtures" / "llm")
+    started = time.monotonic()
+    out = await llm.complete("smoke", {"goal": "run 5k"}, SmokeOut, Purpose.evaluate)
+    print(
+        f"adapter={config.provider.adapter} model={config.provider.model} "
+        f"elapsed={time.monotonic() - started:.2f}s output={out.model_dump_json()}"
+    )
+
+
+if __name__ == "__main__":
+    asyncio.run(_main())

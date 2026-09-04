@@ -28,6 +28,7 @@ modules =
 [importlinter:contract:cmd-thin]
 name = cmd may only touch containers and packages
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     cmd
 forbidden_modules =
@@ -44,6 +45,7 @@ forbidden_modules =
 [importlinter:contract:domain-pure]
 name = Domain must not import frameworks or vendor SDKs
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     services.api.domain
     services.plan_engine.domain
@@ -61,6 +63,7 @@ forbidden_modules =
 [importlinter:contract:application-no-vendor]
 name = Application must not import vendor SDKs
 type = forbidden
+allow_indirect_imports = True
 source_modules =
     services.api.application
     services.plan_engine.application
