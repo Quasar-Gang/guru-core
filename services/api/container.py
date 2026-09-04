@@ -74,12 +74,16 @@ from services.api.adapters.http.app import create_app
 from services.api.adapters.jwt_issuer import HmacTokenIssuer
 from services.api.adapters.queue.import_consumer import ImportParseConsumer
 from services.api.application.complete_import import CompleteImport
+from services.api.application.create_plan_session import CreatePlanSession
+from services.api.application.get_job import GetJob
+from services.api.application.get_plan_session import GetPlanSession
 from services.api.application.get_profile import GetProfile
 from services.api.application.list_imports import ListImports
 from services.api.application.login_with_google import LoginWithGoogle
 from services.api.application.parse_import import ParseImport
 from services.api.application.ports import ClockPort, GoogleOidcPort, TokenIssuerPort
 from services.api.application.presign_import import PresignImport
+from services.api.application.submit_answers import SubmitAnswers
 from services.api.application.update_profile import UpdateProfile
 from services.api.settings import ApiSettings
 
@@ -130,6 +134,10 @@ class ApiContainer:
     complete_import: CompleteImport
     list_imports: ListImports
     parse_import: ParseImport
+    create_plan_session: CreatePlanSession
+    get_plan_session: GetPlanSession
+    submit_answers: SubmitAnswers
+    get_job: GetJob
 
 
 def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
@@ -148,6 +156,22 @@ def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
         "parse_import": ParseImport(
             parts["imports"], parts["documents"], parts["storage"], parts["parsers"]
         ),
+        "create_plan_session": CreatePlanSession(
+            parts["plan_sessions"],
+            parts["imports"],
+            parts["oauth_connections"],
+            parts["queue"],
+        ),
+        "get_plan_session": GetPlanSession(
+            parts["plan_sessions"],
+            parts["followup_rounds"],
+            parts["plans"],
+            parts["plan_tasks"],
+        ),
+        "submit_answers": SubmitAnswers(
+            parts["plan_sessions"], parts["followup_rounds"], parts["queue"], parts["clock"]
+        ),
+        "get_job": GetJob(parts["cache"], parts["queue"]),
     }
 
 

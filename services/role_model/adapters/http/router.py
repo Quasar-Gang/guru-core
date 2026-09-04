@@ -8,6 +8,10 @@ from fastapi import APIRouter, Depends, Query, Response
 from services.role_model.adapters.http.deps import api_key_guard
 from services.role_model.adapters.http.schemas import UpsertRoleModelRequest
 from services.role_model.application import RoleModelSummary, RoleModelView
+from services.role_model.application.recommend_role_models import (
+    Recommendation,
+    RecommendInput,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - type-only, avoids a container <-> adapters import cycle
     from services.role_model.container import RoleModelContainer
@@ -29,6 +33,15 @@ def build_router(container: "RoleModelContainer") -> APIRouter:
     @router.get("/tags", response_model=dict[str, list[str]])
     async def list_tags() -> dict[str, list[str]]:
         return await container.list_tags()
+
+    @router.post("/recommend", response_model=list[Recommendation])
+    async def recommend_role_models(body: RecommendInput) -> list[Recommendation]:
+        """POST rather than GET: the user profile is a nested object, not a query string.
+
+        The public, JWT-protected `GET /v1/role-models/recommend` lives in the API service,
+        which builds this payload from the caller's profile and forwards it here.
+        """
+        return await container.recommend_role_models(body)
 
     @router.get("/{role_model_id}", response_model=RoleModelView)
     async def get_role_model(role_model_id: UUID) -> RoleModelView:

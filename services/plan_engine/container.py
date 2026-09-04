@@ -10,6 +10,7 @@ To add a use case:
 Both `build_container` and `build_test_container` pick it up automatically.
 """
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field, fields
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -21,6 +22,7 @@ from packages.llm.fake import FakeLLM
 from packages.llm.observability import NullObserver
 from packages.llm.ports import LLMPort
 from packages.llm.prompts import PromptRegistry
+from packages.queue import JobPayload
 from packages.repo import (
     DocumentRepo,
     FollowupRoundRepo,
@@ -52,6 +54,10 @@ from packages.repo import (
     build_engine,
     build_session_factory,
 )
+from services.plan_engine.adapters.queue.consumers import (
+    EvaluateSessionConsumer,
+    PlanReviseConsumer,
+)
 from services.plan_engine.application.context_builder import ContextBuilder
 from services.plan_engine.application.evaluate_session import EvaluateSession
 from services.plan_engine.application.generate_plans import GeneratePlans
@@ -71,6 +77,7 @@ __all__ = [
     "SystemClock",
     "build_container",
     "build_test_container",
+    "create_worker_handlers",
 ]
 
 
@@ -272,3 +279,15 @@ def build_test_container(**overrides: Any) -> PlanEngineContainer:
         **_configs(),
     }
     return _assemble(parts, overrides)
+
+
+def create_worker_handlers(
+    container: PlanEngineContainer,
+) -> dict[str, Callable[[JobPayload], Awaitable[None]]]:
+    """Queue name -> handler map used by `cmd/plan_engine_worker.py`."""
+    evaluate = EvaluateSessionConsumer(container.evaluate_session)
+    return {
+        "plan.generate": evaluate,
+        "plan.continue": evaluate,
+        "plan.revise": PlanReviseConsumer(),
+    }
