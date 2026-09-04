@@ -8,6 +8,7 @@ from services.plan_engine.application.ports import (
     NullRoleModelRenderer,
     RoleModelRendererPort,
 )
+from services.plan_engine.application.revise_plan import RevisePlan
 
 __all__ = [
     "ClockPort",
@@ -15,6 +16,7 @@ __all__ = [
     "EvaluateSession",
     "GeneratePlans",
     "NullRoleModelRenderer",
+    "RevisePlan",
     "RoleModelRendererPort",
     "SessionContext",
 ]

@@ -75,6 +75,7 @@ from services.api.adapters.google.oauth import FakeOAuth, GoogleOAuth
 from services.api.adapters.google.oidc import FakeGoogleOidc, GoogleOidc
 from services.api.adapters.http.app import create_app
 from services.api.adapters.jwt_issuer import HmacTokenIssuer
+from services.api.adapters.queue.export_consumer import ExportPushConsumer
 from services.api.adapters.queue.import_consumer import ImportParseConsumer
 from services.api.adapters.role_model_client import (
     FakeRoleModelClient,
@@ -86,12 +87,17 @@ from services.api.application.authorize_integration import AuthorizeIntegration
 from services.api.application.complete_import import CompleteImport
 from services.api.application.complete_integration import CompleteIntegration
 from services.api.application.create_plan_session import CreatePlanSession
+from services.api.application.create_revision import CreateRevision
+from services.api.application.decide_revision import DecideRevision
 from services.api.application.delete_plan import DeletePlan
 from services.api.application.disconnect_integration import DisconnectIntegration
+from services.api.application.export_markdown import ExportMarkdown
+from services.api.application.get_export_status import GetExportStatus
 from services.api.application.get_job import GetJob
 from services.api.application.get_plan import GetPlan
 from services.api.application.get_plan_session import GetPlanSession
 from services.api.application.get_profile import GetProfile
+from services.api.application.get_revision import GetRevision
 from services.api.application.google_access_token import GoogleAccessTokenProvider
 from services.api.application.import_google_calendar import ImportGoogleCalendar
 from services.api.application.list_checkins import ListCheckins
@@ -99,6 +105,7 @@ from services.api.application.list_imports import ListImports
 from services.api.application.list_integrations import ListIntegrations
 from services.api.application.list_plan_tasks import ListPlanTasks
 from services.api.application.list_plans import ListPlans
+from services.api.application.list_revisions import ListRevisions
 from services.api.application.login_with_google import LoginWithGoogle
 from services.api.application.parse_import import ParseImport
 from services.api.application.ports import (
@@ -110,12 +117,16 @@ from services.api.application.ports import (
     TokenIssuerPort,
 )
 from services.api.application.presign_import import PresignImport
+from services.api.application.push_export import PushExport
 from services.api.application.recommend_role_models import RecommendRoleModels
+from services.api.application.request_export import RequestExport
 from services.api.application.submit_answers import SubmitAnswers
 from services.api.application.submit_checkin import SubmitCheckin
+from services.api.application.unexport_plan import UnexportPlan
 from services.api.application.update_plan import UpdatePlan
 from services.api.application.update_plan_task import UpdatePlanTask
 from services.api.application.update_profile import UpdateProfile
+from services.api.domain.calendar_mapping import load_color_map
 from services.api.settings import ApiSettings
 
 __all__ = [
@@ -189,6 +200,15 @@ class ApiContainer:
     list_integrations: ListIntegrations
     disconnect_integration: DisconnectIntegration
     import_google_calendar: ImportGoogleCalendar
+    export_markdown: ExportMarkdown
+    request_export: RequestExport
+    push_export: PushExport
+    get_export_status: GetExportStatus
+    unexport_plan: UnexportPlan
+    create_revision: CreateRevision
+    list_revisions: ListRevisions
+    get_revision: GetRevision
+    decide_revision: DecideRevision
 
 
 def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
@@ -201,6 +221,17 @@ def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
         parts["cipher"],
         parts["cache"],
         parts["clock"],
+    )
+    get_revision = GetRevision(parts["plan_revisions"], get_plan)
+    export_markdown = ExportMarkdown(
+        get_plan, parts["plan_tasks"], parts["profiles"], parts["storage"], parts["clock"]
+    )
+    unexport_plan = UnexportPlan(
+        get_plan,
+        parts["plan_tasks"],
+        parts["plan_exports"],
+        parts["calendar"],
+        google_token_provider,
     )
     return {
         "login_with_google": LoginWithGoogle(
@@ -236,7 +267,13 @@ def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
         "get_plan": get_plan,
         "update_plan": UpdatePlan(parts["plans"], parts["clock"], get_plan),
         "archive_plan": ArchivePlan(parts["plans"], parts["clock"], get_plan),
-        "delete_plan": DeletePlan(parts["plans"], parts["plan_tasks"], get_plan),
+        "delete_plan": DeletePlan(
+            parts["plans"],
+            parts["plan_tasks"],
+            parts["plan_exports"],
+            unexport_plan,
+            get_plan,
+        ),
         "list_plan_tasks": ListPlanTasks(parts["plans"], parts["plan_tasks"], parts["profiles"]),
         "update_plan_task": UpdatePlanTask(
             parts["plans"],
@@ -274,6 +311,38 @@ def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
             parts["calendar"],
             google_token_provider,
             parts["clock"],
+        ),
+        "export_markdown": export_markdown,
+        "request_export": RequestExport(
+            get_plan,
+            parts["plan_exports"],
+            parts["queue"],
+            google_token_provider,
+            export_markdown,
+        ),
+        "push_export": PushExport(
+            parts["plans"],
+            parts["plan_tasks"],
+            parts["plan_exports"],
+            parts["calendar"],
+            google_token_provider,
+            load_color_map(),
+            parts["clock"],
+        ),
+        "get_export_status": GetExportStatus(get_plan, parts["plan_exports"], parts["plan_tasks"]),
+        "unexport_plan": unexport_plan,
+        "create_revision": CreateRevision(parts["plan_revisions"], parts["queue"], get_plan),
+        "list_revisions": ListRevisions(parts["plan_revisions"], get_plan),
+        "get_revision": get_revision,
+        "decide_revision": DecideRevision(
+            parts["plans"],
+            parts["plan_tasks"],
+            parts["plan_revisions"],
+            parts["profiles"],
+            parts["plan_exports"],
+            parts["queue"],
+            parts["clock"],
+            get_revision,
         ),
     }
 
@@ -434,5 +503,5 @@ def create_worker_handlers(
     """Queue name -> handler map used by `cmd/api_worker.py`."""
     return {
         "import.parse": ImportParseConsumer(container.parse_import),
-        # TODO(Task 34): register the "export.push" handler once PushExport exists.
+        "export.push": ExportPushConsumer(container.push_export),
     }

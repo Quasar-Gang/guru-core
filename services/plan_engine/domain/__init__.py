@@ -27,6 +27,13 @@ from services.plan_engine.domain.readiness import (
     load_readiness_config,
     readiness_rules,
 )
+from services.plan_engine.domain.revision import (
+    RevisedTemplateOutput,
+    Strategy,
+    encode_proposal,
+    plan_deadline,
+    strategy_rules,
+)
 from services.plan_engine.domain.scheduler import (
     PacingViolation,
     ScheduledTask,
@@ -75,11 +82,13 @@ __all__ = [
     "PlanTemplateOutput",
     "ReadinessConfig",
     "ReadinessOutput",
+    "RevisedTemplateOutput",
     "ScheduleResult",
     "ScheduledTask",
     "SchedulerConfig",
     "SessionStatus",
     "SlotHint",
+    "Strategy",
     "TaskDiffEntry",
     "TaskSnapshot",
     "TaskSnapshotWithKey",
@@ -89,10 +98,13 @@ __all__ = [
     "assert_transition",
     "derive",
     "diff_tasks",
+    "encode_proposal",
     "is_terminal",
     "load_difficulty_config",
     "load_readiness_config",
     "load_scheduler_config",
+    "plan_deadline",
     "readiness_rules",
     "schedule",
+    "strategy_rules",
 ]

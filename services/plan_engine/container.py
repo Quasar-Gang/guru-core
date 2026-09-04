@@ -11,7 +11,7 @@ Both `build_container` and `build_test_container` pick it up automatically.
 """
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, fields
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -24,8 +24,10 @@ from packages.llm.ports import LLMPort
 from packages.llm.prompts import PromptRegistry
 from packages.queue import JobPayload
 from packages.repo import (
+    CheckinRepo,
     DocumentRepo,
     FollowupRoundRepo,
+    InMemoryCheckinRepo,
     InMemoryDocumentRepo,
     InMemoryFollowupRoundRepo,
     InMemoryLlmCallRepo,
@@ -36,6 +38,7 @@ from packages.repo import (
     InMemoryProfileRepo,
     InMemoryRoleModelRepo,
     LlmCallRepo,
+    PgCheckinRepo,
     PgDocumentRepo,
     PgFollowupRoundRepo,
     PgLlmCallRepo,
@@ -66,6 +69,7 @@ from services.plan_engine.application.ports import (
     MarkdownRoleModelRenderer,
     RoleModelRendererPort,
 )
+from services.plan_engine.application.revise_plan import RevisePlan
 from services.plan_engine.domain.difficulty import DifficultyConfig, load_difficulty_config
 from services.plan_engine.domain.readiness import ReadinessConfig, load_readiness_config
 from services.plan_engine.domain.scheduler import SchedulerConfig, load_scheduler_config
@@ -117,6 +121,7 @@ class PlanEngineContainer:
     plans: PlanRepo
     plan_tasks: PlanTaskRepo
     plan_revisions: PlanRevisionRepo
+    checkins: CheckinRepo
     documents: DocumentRepo
     role_models: RoleModelRepo
     profiles: ProfileRepo
@@ -140,9 +145,7 @@ class PlanEngineContainer:
     # --- use cases (one field each) ---
     evaluate_session: EvaluateSession
     generate_plans: GeneratePlans
-
-    #: Task 36 fills this in with `RevisePlan`; kept here so the wiring has one home.
-    revise_plan: object | None = field(default=None)
+    revise_plan: RevisePlan
 
 
 def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
@@ -182,10 +185,22 @@ def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
         parts["cache"],
         max_attempts,
     )
+    revise_plan = RevisePlan(
+        parts["plans"],
+        parts["plan_tasks"],
+        parts["plan_revisions"],
+        parts["checkins"],
+        context_builder,
+        parts["llm"],
+        parts["scheduler_config"],
+        parts["clock"],
+        max_attempts,
+    )
     return {
         "context_builder": context_builder,
         "generate_plans": generate_plans,
         "evaluate_session": evaluate_session,
+        "revise_plan": revise_plan,
     }
 
 
@@ -226,6 +241,7 @@ def build_container(settings: PlanEngineSettings | None = None) -> PlanEngineCon
         "plans": PgPlanRepo(session_factory),
         "plan_tasks": PgPlanTaskRepo(session_factory),
         "plan_revisions": PgPlanRevisionRepo(session_factory),
+        "checkins": PgCheckinRepo(session_factory),
         "documents": PgDocumentRepo(session_factory),
         "role_models": PgRoleModelRepo(session_factory),
         "profiles": PgProfileRepo(session_factory),
@@ -268,6 +284,7 @@ def build_test_container(**overrides: Any) -> PlanEngineContainer:
         "plans": InMemoryPlanRepo(),
         "plan_tasks": InMemoryPlanTaskRepo(),
         "plan_revisions": InMemoryPlanRevisionRepo(),
+        "checkins": InMemoryCheckinRepo(),
         "documents": InMemoryDocumentRepo(),
         "role_models": InMemoryRoleModelRepo(),
         "profiles": InMemoryProfileRepo(),
@@ -289,5 +306,5 @@ def create_worker_handlers(
     return {
         "plan.generate": evaluate,
         "plan.continue": evaluate,
-        "plan.revise": PlanReviseConsumer(),
+        "plan.revise": PlanReviseConsumer(container.revise_plan),
     }

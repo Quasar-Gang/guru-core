@@ -2,7 +2,10 @@
 
 import uvicorn
 
+from packages.logging import configure_logging
+
 if __name__ == "__main__":
+    configure_logging("api")
     uvicorn.run(
         "services.api.container:create_asgi_app",
         factory=True,
