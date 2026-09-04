@@ -15,8 +15,10 @@ ALGORITHM = "HS256"
 class HmacTokenIssuer:
     """Issues HS256 JWTs with `{sub, iat, exp}` claims.
 
-    Expiry is checked against the injected `clock` rather than pyjwt's own system time,
-    so tests can move time forward with a `FakeClock`.
+    Both `iat` and `exp` are checked against the injected `clock` rather than pyjwt's
+    own system time, so tests can move time forward with a `FakeClock`. Leaving pyjwt's
+    `iat` check on would reject every token whenever the clock is set away from the
+    wall clock, which is exactly what a fake clock is for.
     """
 
     def __init__(self, secret: str, ttl_seconds: int, clock: ClockPort) -> None:
@@ -38,7 +40,7 @@ class HmacTokenIssuer:
                 token,
                 self._secret,
                 algorithms=[ALGORITHM],
-                options={"verify_exp": False, "require": ["sub", "exp"]},
+                options={"verify_exp": False, "verify_iat": False, "require": ["sub", "exp"]},
             )
         except jwt.PyJWTError as exc:
             raise Unauthorized("invalid token") from exc
