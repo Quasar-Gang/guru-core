@@ -1,12 +1,14 @@
-"""API Service 的唯一組裝點。
+"""The single composition root for the API service.
 
-`ApiContainer` 是 frozen dataclass：settings、14 個 repo、基礎設施 port，以及
-**每個 use case 一個欄位**。adapters 只認 container，不自己 new 任何實作。
+`ApiContainer` is a frozen dataclass holding settings, the 14 repos, the infrastructure
+ports, and **one field per use case**. Adapters only ever read from the container; they
+never construct an implementation themselves.
 
-新增一個 use case的步驟：
-1. 在 `ApiContainer` 加一個欄位；
-2. 在 `_build_use_cases()` 裡用 `parts` 組裝它。
-`build_container` 與 `build_test_container` 都會自動帶到，不需改兩次。
+To add a use case:
+1. add a field to `ApiContainer`;
+2. build it from `parts` in `_build_use_cases()`.
+Both `build_container` and `build_test_container` pick it up automatically, so there is
+no second place to update.
 """
 
 from dataclasses import dataclass, fields
@@ -85,7 +87,7 @@ __all__ = [
 class ApiContainer:
     settings: ApiSettings
 
-    # --- repos（14 個，對應 packages/repo/ports.py） ---
+    # --- repos (14, mirroring packages/repo/ports.py) ---
     users: UserRepo
     profiles: ProfileRepo
     oauth_connections: OAuthConnectionRepo
@@ -101,7 +103,7 @@ class ApiContainer:
     plan_exports: PlanExportRepo
     llm_calls: LlmCallRepo
 
-    # --- 基礎設施 port ---
+    # --- infrastructure ports ---
     storage: StoragePort
     queue: QueuePort
     cache: CachePort
@@ -109,12 +111,12 @@ class ApiContainer:
     tokens: TokenIssuerPort
     oidc: GoogleOidcPort
 
-    # --- use cases（每個一個欄位） ---
+    # --- use cases (one field each) ---
     login_with_google: LoginWithGoogle
 
 
 def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
-    """從已組好的 repo / port 組出所有 use case。"""
+    """Build every use case from the already-assembled repos and ports."""
     return {
         "login_with_google": LoginWithGoogle(
             parts["users"], parts["profiles"], parts["oidc"], parts["tokens"]
@@ -123,10 +125,11 @@ def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
 
 
 def _assemble(parts: dict[str, Any], overrides: dict[str, Any]) -> ApiContainer:
-    """先套用 overrides，再用「被覆蓋後」的元件組 use case。
+    """Apply overrides first, then build the use cases from the overridden components.
 
-    這確保被覆蓋的 repo / port 會真的被依賴它的 use case 拿到；
-    overrides 也可以直接指定某個 use case，最後再套一次即可覆蓋預設組裝結果。
+    This guarantees an overridden repo or port actually reaches the use cases that depend
+    on it. Overrides may also name a use case directly; applying them once more at the end
+    lets that win over the default wiring.
     """
     known = {f.name for f in fields(ApiContainer)}
     unknown = set(overrides) - known
@@ -140,7 +143,7 @@ def _build_storage(settings: ApiSettings) -> StoragePort:
     if settings.storage_backend == "memory":
         return InMemoryStorage()
     if settings.storage_backend == "r2":
-        raise NotImplementedError("R2Storage 於 M5 補上（Task 40）")
+        raise NotImplementedError("R2Storage lands in M5 (Task 40)")
     return LocalFileStorage(
         Path(settings.storage_local_root),
         settings.storage_public_base_url,
@@ -149,7 +152,7 @@ def _build_storage(settings: ApiSettings) -> StoragePort:
 
 
 def build_container(settings: ApiSettings | None = None) -> ApiContainer:
-    """正式組裝：PostgreSQL repo + Local storage + ARQ + Redis。"""
+    """Production wiring: PostgreSQL repos + local storage + ARQ + Redis."""
     resolved = settings if settings is not None else ApiSettings()
     session_factory = build_session_factory(build_engine(resolved.database_url))
     clock: ClockPort = SystemClock()
@@ -181,7 +184,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
 
 def _test_settings() -> ApiSettings:
     return ApiSettings(
-        _env_file=None,  # 測試不讀 .env，保持決定性
+        _env_file=None,  # tests never read .env, so results stay deterministic
         database_url="postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/guru_core_test",
         redis_url="redis://127.0.0.1:6379/15",
         jwt_secret="test-jwt-secret-at-least-32-bytes-long",
@@ -192,10 +195,10 @@ def _test_settings() -> ApiSettings:
 
 
 def build_test_container(**overrides: Any) -> ApiContainer:
-    """全 Fake 的 container：不碰 DB、Redis、檔案系統、外網。
+    """A fully faked container: no DB, Redis, filesystem, or network access.
 
-    任一欄位都可以用 keyword 覆蓋，例如
-    `build_test_container(oidc=FakeGoogleOidc(...), clock=FakeClock(...))`。
+    Any field can be replaced by keyword, e.g.
+    `build_test_container(oidc=FakeGoogleOidc(...), clock=FakeClock(...))`.
     """
     settings = overrides.get("settings") or _test_settings()
     clock: ClockPort = FakeClock(SystemClock().now())
@@ -222,7 +225,8 @@ def build_test_container(**overrides: Any) -> ApiContainer:
         "tokens": HmacTokenIssuer(settings.jwt_secret, settings.jwt_ttl_seconds, clock),
         "oidc": FakeGoogleOidc(),
     }
-    # tokens 預設綁在預設 clock 上；若呼叫端只覆蓋 clock，重新綁一次才不會用到舊時鐘。
+    # tokens is bound to the default clock; if the caller overrode only the clock, rebind it
+    # so we do not keep issuing tokens against the old one.
     if "clock" in overrides and "tokens" not in overrides:
         parts["tokens"] = HmacTokenIssuer(
             settings.jwt_secret, settings.jwt_ttl_seconds, overrides["clock"]
@@ -231,5 +235,5 @@ def build_test_container(**overrides: Any) -> ApiContainer:
 
 
 def create_asgi_app() -> FastAPI:
-    """`cmd/api_server.py` 用的 uvicorn factory。"""
+    """uvicorn factory used by `cmd/api_server.py`."""
     return create_app(build_container())

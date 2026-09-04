@@ -1,4 +1,4 @@
-"""用 Google 授權碼登入，回一個本系統的 JWT。"""
+"""Log in with a Google authorization code and return one of our own JWTs."""
 
 from uuid import UUID
 
@@ -20,7 +20,7 @@ class LoginResult(BaseModel):
 
 
 class LoginWithGoogle:
-    """首次登入建 user + 空 profile，之後沿用同一個 user。"""
+    """First login creates the user plus an empty profile; later logins reuse that same user."""
 
     def __init__(
         self,

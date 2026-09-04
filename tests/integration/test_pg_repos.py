@@ -1,8 +1,9 @@
-"""Pg repo 的整合測試 — 需要真實 PostgreSQL（`-m integration` 才會跑）。
+"""Integration tests for the Pg repos — they need a real PostgreSQL (`-m integration`).
 
-清理策略：每個測試自己用唯一 email / google_sub 建 user，`cleanup` fixture 在測試結束時
-以 `DELETE FROM users WHERE id IN (...)` 刪掉，靠 FK ON DELETE CASCADE 連帶清乾淨；
-不掛在 user 底下的 role_models 與 llm_calls 另外以 id / 唯一 prompt_name 追蹤刪除。
+Cleanup: each test creates its own user with a unique email / google_sub, and the `cleanup`
+fixture removes them at teardown with `DELETE FROM users WHERE id IN (...)`, letting FK
+ON DELETE CASCADE take the rest. role_models and llm_calls do not hang off a user, so they
+are tracked and deleted separately by id and by unique prompt_name.
 """
 
 from __future__ import annotations
@@ -56,7 +57,7 @@ NOW = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
 
 @dataclass
 class Cleanup:
-    """測試自己建立的資料，teardown 時刪掉。"""
+    """Rows created by a test, deleted at teardown."""
 
     user_ids: list[UUID] = field(default_factory=list)
     role_model_ids: list[UUID] = field(default_factory=list)
@@ -151,7 +152,7 @@ async def _make_plan(
     return plan
 
 
-# --- 計畫給定的四個重點案例 -------------------------------------------------
+# --- The four key cases called out by the plan --------------------------------
 
 
 async def test_plan_repo_scopes_by_user(

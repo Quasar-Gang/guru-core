@@ -1,4 +1,4 @@
-# smoke test：讀設定 → build_llm → 呼叫一次 smoke prompt → 印出 provider/model/耗時/token。
+# Smoke test: load config -> build_llm -> run one smoke prompt -> print provider/model/elapsed.
 import asyncio
 import time
 from pathlib import Path

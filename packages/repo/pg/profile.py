@@ -1,4 +1,4 @@
-"""PgProfileRepo — profiles 表的 PostgreSQL 實作。"""
+"""PgProfileRepo — PostgreSQL implementation of the profiles table."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def _to_entity(row: models.Profile) -> Profile:
 
 
 class PgProfileRepo:
-    """ProfileRepo 的 PostgreSQL 實作。"""
+    """PostgreSQL ProfileRepo."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory

@@ -1,52 +1,55 @@
 # services/api — API Service
 
-## 負責什麼
+## What it owns
 
-面向 App 的唯一 HTTP 入口（`/v1`），以及 `import.parse` / `export.push` 兩個 worker 的
-consumer。目前已完成的部分：
+The single app-facing HTTP entrypoint (`/v1`), plus the consumers for the `import.parse` and
+`export.push` workers. Implemented so far:
 
-- `POST /v1/auth/google` — 用 Google 授權碼登入，回本系統簽發的 JWT。
-- `GET /v1/me` — 用 Bearer JWT 取得目前使用者。
-- `GET /health` — 存活檢查，不需認證。
+- `POST /v1/auth/google` — log in with a Google authorization code, return a JWT we issue.
+- `GET /v1/me` — resolve the current user from a Bearer JWT.
+- `GET /health` — liveness check, no auth required.
 
-分層：`domain/`（純 Python 錯誤型別）→ `application/`（use case + port Protocol）
-→ `adapters/`（FastAPI、httpx、JWT、時鐘）→ `container.py`（唯一組裝點）。
+Layering: `domain/` (plain-Python error types) → `application/` (use cases + port Protocols)
+→ `adapters/` (FastAPI, httpx, JWT, clock) → `container.py` (the single composition root).
 
-## 對外 port 有哪些
+## The ports it exposes
 
-`application/ports.py` 定義本 service 自己的 port（實作在 `adapters/`）：
+`application/ports.py` defines the ports this service owns; the implementations live in
+`adapters/`:
 
-| Port | 正式實作 | 測試實作 |
+| Port | Production impl | Test impl |
 |---|---|---|
 | `GoogleOidcPort` | `adapters/google/oidc.py:GoogleOidc` | `FakeGoogleOidc` |
-| `TokenIssuerPort` | `adapters/jwt_issuer.py:HmacTokenIssuer` | 同一個（配 `FakeClock`） |
-| `ClockPort` | `adapters/clock.py:SystemClock` | `FakeClock`（可 `advance(seconds=...)`） |
+| `TokenIssuerPort` | `adapters/jwt_issuer.py:HmacTokenIssuer` | the same class, paired with `FakeClock` |
+| `ClockPort` | `adapters/clock.py:SystemClock` | `FakeClock` (supports `advance(seconds=...)`) |
 
-其餘 port 來自 `packages/`：`packages.repo` 的 14 個 `XxxRepo`、`packages.storage`
-的 `StoragePort`、`packages.queue` 的 `QueuePort`、`packages.cache` 的 `CachePort`。
+Every other port comes from `packages/`: the 14 `XxxRepo` types in `packages.repo`,
+`StoragePort` from `packages.storage`, `QueuePort` from `packages.queue`, and `CachePort`
+from `packages.cache`.
 
-## 不負責什麼
+## What it does not do
 
-- 不生成、不修訂計畫（Plan Engine 的事）；不存 role model 內容（Role Model Service 的事）。
-- 不直接呼叫 LLM。
-- 不自己 new 任何 adapter：一切從 `ApiContainer` 取。
+- It does not generate or revise plans (that is the Plan Engine) and does not store role
+  model content (that is the Role Model Service).
+- It does not call an LLM directly.
+- It never constructs an adapter itself: everything comes from `ApiContainer`.
 
-## 怎麼跑
+## Running it
 
 ```bash
-uv run python -m cmd.api_server        # uvicorn，讀 .env
+uv run python -m cmd.api_server        # uvicorn, reads .env
 uv run pytest tests/unit/api tests/application/api
 ```
 
-## 測試怎麼寫
+## Writing tests
 
-repo 根目錄的 `conftest.py` 提供三個 fixture：
+The repo-root `conftest.py` provides three fixtures:
 
-- `container` — `build_test_container()`，全 Fake（InMemory repo / storage / queue、
-  `DictCache`、`FakeClock`、`HmacTokenIssuer`、`FakeGoogleOidc`）。
-- `client` — `httpx.AsyncClient` + `httpx.ASGITransport`，打在 `create_app(container)` 上。
-- `auth_headers` — 已建好一個使用者並簽好 JWT 的 `{"Authorization": "Bearer ..."}`；
-  該使用者的 id 另有 `auth_user_id` fixture。
+- `container` — `build_test_container()`, fully faked (in-memory repos / storage / queue,
+  `DictCache`, `FakeClock`, `HmacTokenIssuer`, `FakeGoogleOidc`).
+- `client` — `httpx.AsyncClient` over `httpx.ASGITransport`, wired to `create_app(container)`.
+- `auth_headers` — `{"Authorization": "Bearer ..."}` for an already-created user; that user's
+  id is available separately as the `auth_user_id` fixture.
 
-要換掉某個元件時用 `build_test_container(**overrides)`，被覆蓋的元件會真的傳進
-依賴它的 use case。
+To swap a component, use `build_test_container(**overrides)`; the replacement really is passed
+to the use cases that depend on it.

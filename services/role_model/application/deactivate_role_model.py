@@ -1,4 +1,4 @@
-"""停用（軟刪除）一筆 role model。"""
+"""Deactivate (soft-delete) a role model."""
 
 from uuid import UUID
 

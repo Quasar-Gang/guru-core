@@ -1,4 +1,4 @@
-"""Parser 測試共用的 fixture 載入器。"""
+"""Fixture loader shared by the parser tests."""
 
 from pathlib import Path
 
@@ -18,7 +18,7 @@ CONTENT_TYPES = {
 
 
 def load_blob(name: str) -> RawBlob:
-    """從 tests/fixtures/importers/ 讀一個 fixture 成 RawBlob。"""
+    """Read one fixture from tests/fixtures/importers/ as a RawBlob."""
     path = FIXTURES / name
     return RawBlob(
         data=path.read_bytes(),

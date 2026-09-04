@@ -1,10 +1,11 @@
-"""把 ``PlanTemplate`` 展開成帶絕對時間的任務列（PRD 4.3.2）。
+"""Expand a ``PlanTemplate`` into tasks with absolute times (PRD 4.3.2).
 
-純函式、無隨機：同樣的輸入永遠得到同樣的輸出，這是修訂 diff（Task 20）能靠
-``(template_key, week_index, occurrence)`` 對齊的前提。
+Pure and deterministic: the same input always yields the same output, which is what lets
+revision diffs (Task 20) align tasks on ``(template_key, week_index, occurrence)``.
 
-排程失敗不是例外：排不下的項目只記進 ``ScheduleResult.unplaced``，pacing 違規
-只記進 ``ScheduleResult.violations``，由 use case 決定要回灌 LLM 重生還是接受。
+A scheduling failure is not an exception: items that do not fit are recorded in
+``ScheduleResult.unplaced`` and pacing breaches in ``ScheduleResult.violations``. The use
+case decides whether to feed them back to the LLM for a regeneration or accept them.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ __all__ = [
 
 _DAYS_PER_WEEK = 7
 
-#: ``day_hint`` -> 允許的 ``date.weekday()`` 值。
+#: ``day_hint`` -> the ``date.weekday()`` values it allows.
 _DAY_HINT_WEEKDAYS: dict[DayHint, tuple[int, ...]] = {
     "mon": (0,),
     "tue": (1,),
@@ -54,12 +55,12 @@ _DAY_HINT_WEEKDAYS: dict[DayHint, tuple[int, ...]] = {
     "any": (0, 1, 2, 3, 4, 5, 6),
 }
 
-#: 不排具體時刻、一律展開成全天任務的型別（規則 7、8）。
+#: Task types that get no specific time and always become all-day tasks (rules 7 and 8).
 _ALL_DAY_TYPES: frozenset[TaskType] = frozenset({"rest", "checkpoint"})
 
 
 class SchedulerConfig(BaseModel):
-    """``config/scheduler.yaml``：scheduler 的系統層規則，不由 LLM 指定。"""
+    """``config/scheduler.yaml``: system-level scheduler rules, never set by the LLM."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -71,7 +72,7 @@ class SchedulerConfig(BaseModel):
 
 
 class ScheduledTask(BaseModel):
-    """展開後的單一任務，對應一列 ``plan_tasks``。"""
+    """One expanded task, corresponding to a single ``plan_tasks`` row."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -89,7 +90,7 @@ class ScheduledTask(BaseModel):
 
 
 class PacingViolation(BaseModel):
-    """單週對 trait ``pacing`` 的違規；只記錄，不 raise（規則 9）。"""
+    """A breach of the trait ``pacing`` in one week; recorded, never raised (rule 9)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -112,7 +113,7 @@ class ScheduleResult(BaseModel):
 
 
 def load_scheduler_config(path: Path | None = None) -> SchedulerConfig:
-    """讀排程設定，預設 ``config/scheduler.yaml``。"""
+    """Load the scheduler config; defaults to ``config/scheduler.yaml``."""
     return load_yaml_config(path or CONFIG_DIR / "scheduler.yaml", SchedulerConfig)
 
 
@@ -125,15 +126,16 @@ def schedule(
     pacing: Pacing | None,
     config: SchedulerConfig,
 ) -> ScheduleResult:
-    """把 ``template`` 展開成 ``duration_weeks`` 週的絕對時間任務列。
+    """Expand ``template`` into ``duration_weeks`` weeks of absolutely timed tasks.
 
-    第 0 週的第一天是 ``start_date``，第 w 週涵蓋 ``start_date + 7w`` 起的七天
-    （規則 1）。所有時刻先以 ``capacity.timezone`` 當地時間計算，再轉 UTC 儲存
-    （規則 11）。
+    Week 0 starts on ``start_date``; week w covers the seven days from ``start_date + 7w``
+    (rule 1). Every time is computed in the local ``capacity.timezone`` and then stored as
+    UTC (rule 11).
     """
     zone = ZoneInfo(capacity.timezone)
     gap = timedelta(minutes=config.min_gap_minutes)
-    # 已佔用的絕對時間區段：既有行程 + 已排定的計時任務。全天任務不佔時段。
+    # Absolute ranges already taken: existing commitments plus timed tasks already placed.
+    # All-day tasks occupy nothing.
     occupied: list[tuple[datetime, datetime]] = [(block.start_at, block.end_at) for block in busy]
 
     tasks: list[ScheduledTask] = []
@@ -146,7 +148,7 @@ def schedule(
         for item in template.weekly_template:
             for occurrence, target_day in enumerate(_target_days(week_start, item)):
                 if item.task_type in _ALL_DAY_TYPES:
-                    # 規則 8：不排具體時間，直接產全天任務。
+                    # Rule 8: no specific time, emit an all-day task directly.
                     start_at, end_at = _all_day_bounds(target_day, zone, config.checkpoint_hour)
                 else:
                     placed = _place(
@@ -160,7 +162,8 @@ def schedule(
                         config=config,
                     )
                     if placed is None:
-                        # 規則 6：往後找不到空檔就記入 unplaced，不產生該任務。
+                        # Rule 6: no free slot further out, record it in unplaced and emit
+                        # no task.
                         if item.key not in unplaced:
                             unplaced.append(item.key)
                         continue
@@ -190,14 +193,15 @@ def schedule(
     return ScheduleResult(tasks=_with_sort_order(tasks), violations=violations, unplaced=unplaced)
 
 
-# --------------------------------------------------------------------------- 規則 3
+# ----------------------------------------------------------------------------- Rule 3
 
 
 def _target_days(week_start: date, item: WeeklyItem) -> list[date]:
-    """``day_hint`` 的候選日中，把 ``times_per_week`` 次平均分佈開來。
+    """Spread ``times_per_week`` occurrences evenly over the days ``day_hint`` allows.
 
-    候選日依序編號 0..L-1，第 i 次取索引 ``round(i * (L-1) / (n-1))``——
-    例如 7 個候選日排 3 次會落在索引 0、3、6。完全確定性，沒有隨機。
+    Candidate days are numbered 0..L-1 and occurrence i takes index
+    ``round(i * (L-1) / (n-1))`` — three occurrences over seven candidates land on 0, 3 and
+    6. Fully deterministic, no randomness.
     """
     candidates = _candidate_days(week_start, item.day_hint)
     if not candidates:
@@ -215,7 +219,7 @@ def _candidate_days(week_start: date, day_hint: DayHint) -> list[date]:
     return [day for day in days if day.weekday() in weekdays]
 
 
-# ------------------------------------------------------------------------ 規則 4-6
+# -------------------------------------------------------------------------- Rules 4-6
 
 
 def _place(
@@ -229,9 +233,9 @@ def _place(
     gap: timedelta,
     config: SchedulerConfig,
 ) -> tuple[datetime, datetime] | None:
-    """從 ``target_day`` 起往後最多 ``max_shift_days`` 天找第一個容得下的空檔。
+    """Find the first slot that fits, from ``target_day`` up to ``max_shift_days`` later.
 
-    規則 6：往後挪不得跨出該週（``week_start`` 起的七天）。
+    Rule 6: shifting later must not leave the week (the seven days from ``week_start``).
     """
     week_end = week_start + timedelta(days=_DAYS_PER_WEEK - 1)
     duration = timedelta(minutes=item.duration_minutes)
@@ -262,7 +266,9 @@ def _first_fit(
     occupied: Iterable[tuple[datetime, datetime]],
     gap: timedelta,
 ) -> datetime | None:
-    """規則 5：區間內第一個容得下 ``duration`` 且與已佔用區段保持 ``gap`` 的起點。"""
+    """Rule 5: first start in the window that fits ``duration`` and keeps ``gap`` from
+    everything already occupied.
+    """
     cursor = window_start
     blocked = sorted((start - gap, end + gap) for start, end in occupied)
     for start, end in blocked:
@@ -276,7 +282,7 @@ def _first_fit(
     return cursor if cursor + duration <= window_end else None
 
 
-# ------------------------------------------------------------------------ 規則 7-8
+# -------------------------------------------------------------------------- Rules 7-8
 
 
 def _checkpoint(
@@ -286,7 +292,7 @@ def _checkpoint(
     zone: ZoneInfo,
     config: SchedulerConfig,
 ) -> ScheduledTask:
-    """規則 7：phase 最後一週的週日放一個全天 checkpoint。"""
+    """Rule 7: put an all-day checkpoint on the Sunday of a phase's last week."""
     sunday = week_start + timedelta(days=(6 - week_start.weekday()) % _DAYS_PER_WEEK)
     start_at, end_at = _all_day_bounds(sunday, zone, config.checkpoint_hour)
     return ScheduledTask(
@@ -311,11 +317,11 @@ def _phase_for_week(phases: Sequence[Phase], week_index: int) -> Phase:
     return phases[-1]
 
 
-# ------------------------------------------------------------------------- 規則 11
+# ---------------------------------------------------------------------------- Rule 11
 
 
 def _local(day: date, minute: int, zone: ZoneInfo) -> datetime:
-    """當地日的第 ``minute`` 分鐘轉成 UTC；``minute`` 可為 1440（次日 00:00）。"""
+    """Minute ``minute`` of a local day, as UTC; 1440 means 00:00 of the next day."""
     extra_days, minute_of_day = divmod(minute, MINUTES_PER_DAY)
     local_date = day + timedelta(days=extra_days)
     local_time = time(hour=minute_of_day // 60, minute=minute_of_day % 60)
@@ -323,21 +329,21 @@ def _local(day: date, minute: int, zone: ZoneInfo) -> datetime:
 
 
 def _all_day_bounds(day: date, zone: ZoneInfo, hour: int) -> tuple[datetime, datetime]:
-    """全天任務：當地 ``hour``:00 起、次日當地 00:00 止，皆以 UTC 表示。"""
+    """All-day task: local ``hour``:00 until local 00:00 the next day, both as UTC."""
     return _local(day, hour * 60, zone), _local(day, MINUTES_PER_DAY, zone)
 
 
-# -------------------------------------------------------------------------- 規則 9
+# ----------------------------------------------------------------------------- Rule 9
 
 
 def _pacing_violations(
     tasks: Sequence[ScheduledTask], duration_weeks: int, pacing: Pacing | None
 ) -> list[PacingViolation]:
-    """逐週比對 trait pacing。只記錄，絕不 raise。
+    """Check the schedule against the trait pacing week by week. Records, never raises.
 
-    兩點刻意的判讀：``rest_days_min`` 只數「有非 rest 任務的天數」（rest 任務
-    本身就代表休息日），``session_minutes`` 只檢查有具體時長的任務（全天任務
-    沒有可比的時長）。
+    Two deliberate readings: ``rest_days_min`` counts only days that carry a non-rest task
+    (a rest task is itself a rest day), and ``session_minutes`` only checks tasks with a real
+    duration (an all-day task has nothing comparable).
     """
     if pacing is None:
         return []
@@ -357,8 +363,8 @@ def _pacing_violations(
                     week_index=week_index,
                     rule="sessions_per_week_max",
                     detail=(
-                        f"第 {week_index + 1} 週有 {len(sessions)} 次 session，"
-                        f"超過上限 {sessions_max}"
+                        f"week {week_index + 1} has {len(sessions)} sessions, "
+                        f"above the maximum of {sessions_max}"
                     ),
                 )
             )
@@ -368,8 +374,8 @@ def _pacing_violations(
                     week_index=week_index,
                     rule="sessions_per_week_min",
                     detail=(
-                        f"第 {week_index + 1} 週只有 {len(sessions)} 次 session，"
-                        f"低於下限 {sessions_min}"
+                        f"week {week_index + 1} has only {len(sessions)} sessions, "
+                        f"below the minimum of {sessions_min}"
                     ),
                 )
             )
@@ -381,8 +387,8 @@ def _pacing_violations(
                     week_index=week_index,
                     rule="rest_days_min",
                     detail=(
-                        f"第 {week_index + 1} 週有 {len(busy_days)} 天排了任務，"
-                        f"休息日不足 {pacing.rest_days_min} 天"
+                        f"week {week_index + 1} has tasks on {len(busy_days)} days, "
+                        f"leaving fewer than {pacing.rest_days_min} rest days"
                     ),
                 )
             )
@@ -398,8 +404,8 @@ def _pacing_violations(
                     week_index=week_index,
                     rule="session_minutes",
                     detail=(
-                        f"第 {week_index + 1} 週的 {task.template_key} 長 {minutes} 分鐘，"
-                        f"不在 {minutes_min}–{minutes_max} 分鐘之內"
+                        f"{task.template_key} in week {week_index + 1} runs {minutes} "
+                        f"minutes, outside {minutes_min}-{minutes_max} minutes"
                     ),
                 )
             )
@@ -407,7 +413,7 @@ def _pacing_violations(
     return violations
 
 
-# ------------------------------------------------------------------------- 規則 10
+# ---------------------------------------------------------------------------- Rule 10
 
 
 def _with_sort_order(tasks: Sequence[ScheduledTask]) -> list[ScheduledTask]:

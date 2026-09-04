@@ -1,9 +1,10 @@
-"""使用者可用時段與既有行程（PRD 4.3.2 的 scheduler 輸入）。
+"""User availability and existing commitments (the scheduler inputs of PRD 4.3.2).
 
-``Capacity`` 是「每個星期幾的哪些 slot 有哪些可用區間」，區間用「自當地 00:00
-起算的分鐘數」表示，因此與日期、時區無關——時區只記在 ``Capacity.timezone``，
-由 scheduler 在展開成絕對時間時才套用。``BusyBlock`` 則相反，它來自既有行事曆
-或匯入文件，本來就是絕對時間，一律 timezone-aware UTC。
+``Capacity`` describes which windows are free in each slot of each weekday. Windows are
+minutes from local midnight, so they carry no date and no timezone — the timezone is kept
+in ``Capacity.timezone`` and only applied when the scheduler expands them into absolute
+times. ``BusyBlock`` is the opposite: it comes from an existing calendar or an imported
+document, so it is already absolute and always timezone-aware UTC.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ _DEFAULT_WINDOWS: dict[SlotHint, tuple[int, int]] = {
 
 
 class TimeWindow(BaseModel):
-    """當地一日之內的可用區間，以自 00:00 起算的分鐘數表示。"""
+    """A free window within one local day, as minutes from local midnight."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -49,10 +50,10 @@ class TimeWindow(BaseModel):
 
 
 class Capacity(BaseModel):
-    """使用者每週的可用時段。
+    """A user's weekly availability.
 
-    ``slots`` 的 key 是 ``date.weekday()``（0=Mon … 6=Sun），value 是該日每個
-    slot 的可用區間清單。沒設定的 weekday / slot 一律視為「沒有空檔」。
+    Keys of ``slots`` are ``date.weekday()`` values (0=Mon … 6=Sun); each value maps a slot
+    to the free windows of that day. A weekday or slot that is absent means no availability.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -71,7 +72,7 @@ class Capacity(BaseModel):
         return value
 
     def windows(self, weekday: int, slot: SlotHint) -> list[TimeWindow]:
-        """該 weekday / slot 的可用區間，依 ``start_minute`` 遞增；沒設定回空 list。"""
+        """Free windows for that weekday and slot, sorted by ``start_minute``; empty if unset."""
         return sorted(
             self.slots.get(weekday, {}).get(slot, []),
             key=lambda window: (window.start_minute, window.end_minute),
@@ -79,7 +80,7 @@ class Capacity(BaseModel):
 
     @classmethod
     def default(cls, timezone: str) -> Capacity:
-        """七天皆 morning 07:00–09:00、noon 12:00–13:00、evening 19:00–22:00。"""
+        """Every day: morning 07:00–09:00, noon 12:00–13:00, evening 19:00–22:00."""
 
         def day() -> dict[SlotHint, list[TimeWindow]]:
             return {
@@ -94,7 +95,7 @@ class Capacity(BaseModel):
 
 
 class BusyBlock(BaseModel):
-    """既有行程佔用的絕對時間區段（UTC aware）。"""
+    """An absolute time range taken by an existing commitment (UTC-aware)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

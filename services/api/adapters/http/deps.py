@@ -1,4 +1,4 @@
-"""FastAPI 依賴：從 request 取出 container，從 Bearer JWT 解出 user_id。"""
+"""FastAPI dependencies: pull the container off the request, resolve user_id from a Bearer JWT."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from fastapi import Depends, Request
 
 from services.api.domain.errors import Unauthorized
 
-if TYPE_CHECKING:  # pragma: no cover - 只為型別；避免 container ↔ adapters 循環 import
+if TYPE_CHECKING:  # pragma: no cover - typing only; avoids a container <-> adapters import cycle
     from services.api.container import ApiContainer
 
 __all__ = ["CurrentUserId", "current_user_id", "get_container"]
@@ -18,13 +18,13 @@ _BEARER_PREFIX = "bearer "
 
 
 def get_container(request: Request) -> ApiContainer:
-    """取得 `create_app` 掛在 `app.state` 上的 container。"""
+    """Return the container that `create_app` stored on `app.state`."""
     container: ApiContainer = request.app.state.container
     return container
 
 
 async def current_user_id(request: Request) -> UUID:
-    """解析 `Authorization: Bearer <jwt>`；缺 header 或無效一律 401。"""
+    """Parse `Authorization: Bearer <jwt>`; a missing or invalid header always yields 401."""
     header = request.headers.get("Authorization")
     if header is None or not header.lower().startswith(_BEARER_PREFIX):
         raise Unauthorized("missing bearer token")

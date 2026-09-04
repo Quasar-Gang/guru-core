@@ -1,4 +1,4 @@
-"""Readiness 指標設定（PRD 13.1–13.3）、evaluate_readiness 輸出 schema 與業務規則。"""
+"""Readiness metric config (PRD 13.1-13.3), the evaluate_readiness schema and its rules."""
 
 from collections.abc import Callable, Set
 from pathlib import Path
@@ -22,7 +22,7 @@ READINESS_CONFIG_FILENAME = "readiness_metrics.yaml"
 
 
 class MetricSpec(BaseModel):
-    """一項 readiness 指標（PRD 13.2 的 required / helpful 項目）。"""
+    """One readiness metric (a required or helpful entry of PRD 13.2)."""
 
     id: str
     name: str
@@ -35,7 +35,7 @@ class MetricSpec(BaseModel):
 
 
 class DomainProbeSpec(BaseModel):
-    """領域關鍵前提：不預先列舉領域，由 LLM 依目標自行判斷。"""
+    """Domain-critical prerequisites; the LLM infers the domain from the goal."""
 
     id: str
     name: str
@@ -46,7 +46,7 @@ class DomainProbeSpec(BaseModel):
 
 
 class ReadinessConfig(BaseModel):
-    """`config/readiness_metrics.yaml` 的型別化檢視。"""
+    """Typed view of `config/readiness_metrics.yaml`."""
 
     version: int
     max_followup_rounds: int
@@ -63,7 +63,7 @@ class ReadinessConfig(BaseModel):
         return [metric.id for metric in self.required]
 
     def known_metric_ids(self) -> set[str]:
-        """required + domain_probe + helpful 的完整 id 集合。"""
+        """Every known metric id: required + domain_probe + helpful."""
         return {
             *(metric.id for metric in self.required),
             self.domain_probe.id,
@@ -76,13 +76,13 @@ def load_readiness_config(path: Path | None = None) -> ReadinessConfig:
 
 
 class FollowupOption(BaseModel):
-    """單一選項；LLM 目前只回文字，保留型別供前端擴充。"""
+    """A single option. The LLM returns only text today; the type is kept for the UI."""
 
     text: str
 
 
 class FollowupQuestion(BaseModel):
-    """一題追問：一題只補一個指標，恰好三個依 context 客製的選項。"""
+    """One follow-up question: one metric, exactly three context-specific options."""
 
     id: str
     metric_id: str
@@ -93,7 +93,7 @@ class FollowupQuestion(BaseModel):
 
 
 class ReadinessOutput(BaseModel):
-    """`evaluate_readiness` 的 LLM output_schema。"""
+    """LLM ``output_schema`` for `evaluate_readiness`."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -106,7 +106,7 @@ def readiness_rules(
     cfg: ReadinessConfig,
     asked_metric_ids: Set[str],
 ) -> list[Callable[[BaseModel], list[str]]]:
-    """回傳 `complete_validated` 用的業務規則：格式對不代表內容合理。"""
+    """Business rules for `complete_validated`: a well-formed output can still be wrong."""
     known = cfg.known_metric_ids()
     asked = set(asked_metric_ids)
 
@@ -114,21 +114,21 @@ def readiness_rules(
         if not isinstance(output, ReadinessOutput):
             return []
         if not output.ready and not output.questions:
-            return ["ready=false 時 questions 不得為空"]
+            return ["questions must not be empty when ready=false"]
         return []
 
     def check_missing_empty_when_ready(output: BaseModel) -> list[str]:
         if not isinstance(output, ReadinessOutput):
             return []
         if output.ready and output.missing:
-            return [f"ready=true 時 missing 必須為空，收到 {output.missing}"]
+            return [f"missing must be empty when ready=true, got {output.missing}"]
         return []
 
     def check_metric_ids(output: BaseModel) -> list[str]:
         if not isinstance(output, ReadinessOutput):
             return []
         return [
-            f"question {q.id} 的 metric_id {q.metric_id!r} 不在指標清單中"
+            f"question {q.id} has metric_id {q.metric_id!r}, which is not a known metric"
             for q in output.questions
             if q.metric_id not in known
         ]
@@ -140,7 +140,9 @@ def readiness_rules(
         seen: set[str] = set()
         for question in output.questions:
             if question.metric_id in seen:
-                violations.append(f"同一輪不得對 metric_id {question.metric_id!r} 出兩題")
+                violations.append(
+                    f"metric_id {question.metric_id!r} must not be asked twice in one round"
+                )
             seen.add(question.metric_id)
         return violations
 
@@ -148,7 +150,7 @@ def readiness_rules(
         if not isinstance(output, ReadinessOutput):
             return []
         return [
-            f"metric_id {q.metric_id!r} 上一輪已問過，不得重問"
+            f"metric_id {q.metric_id!r} was already asked in an earlier round"
             for q in output.questions
             if q.metric_id in asked
         ]
@@ -161,13 +163,13 @@ def readiness_rules(
             options = question.options
             if len(options) != cfg.options_per_question:
                 violations.append(
-                    f"question {question.id} 的 options 必須恰好 "
-                    f"{cfg.options_per_question} 個，收到 {len(options)} 個"
+                    f"question {question.id} must have exactly "
+                    f"{cfg.options_per_question} options, got {len(options)}"
                 )
             if any(not option.strip() for option in options):
-                violations.append(f"question {question.id} 的 options 不得有空字串")
+                violations.append(f"question {question.id} must not have blank options")
             if len({option.strip() for option in options}) != len(options):
-                violations.append(f"question {question.id} 的 options 必須互不相同")
+                violations.append(f"question {question.id} must have distinct options")
         return violations
 
     return [

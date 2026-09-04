@@ -1,4 +1,4 @@
-"""InMemoryProfileRepo — 測試用的記憶體實作。"""
+"""InMemoryProfileRepo — in-memory implementation for tests."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from packages.repo.entities import Profile
 
 
 class InMemoryProfileRepo:
-    """把 profiles 放在 process 記憶體中的 ProfileRepo 實作。"""
+    """ProfileRepo implementation that keeps profiles in process memory."""
 
     def __init__(self) -> None:
         self._profiles: dict[UUID, Profile] = {}

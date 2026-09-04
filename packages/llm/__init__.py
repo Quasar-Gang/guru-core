@@ -1,4 +1,4 @@
-"""LLM package：LLMPort、設定、prompt registry、adapters、驗證鏈與觀測。"""
+"""LLM package: LLMPort, configuration, prompt registry, adapters, validation and observability."""
 
 from packages.llm.anthropic_llm import AnthropicLLM
 from packages.llm.config import (

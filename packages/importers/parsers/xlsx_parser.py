@@ -1,4 +1,4 @@
-"""XLSX parser：規則與 CSV 相同，逐工作表讀取。"""
+"""XLSX parser: same rules as the CSV parser, applied sheet by sheet."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from packages.importers.ports import RawBlob
 
 
 class XlsxParser:
-    """解析 .xlsx 活頁簿（只讀值，不讀公式）。"""
+    """Parse an .xlsx workbook, reading cell values rather than formulas."""
 
     def supports(self, fmt: str) -> bool:
         return fmt == "xlsx"

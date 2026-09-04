@@ -1,4 +1,4 @@
-"""難度推導：係數換算、phases 重算與 pacing 夾住（PRD 4.3.1.1）。"""
+"""Difficulty derivation: coefficient scaling, phase rebuild, and pacing clamps (PRD 4.3.1.1)."""
 
 from typing import Any
 
@@ -18,13 +18,13 @@ from services.plan_engine.domain import (
 CFG = DifficultyConfig(
     coefficients={
         Difficulty.easy: DifficultyCoefficients(
-            frequency=0.6, duration=0.75, weeks=1.25, title_suffix="（輕鬆）"
+            frequency=0.6, duration=0.75, weeks=1.25, title_suffix=" (easy)"
         ),
         Difficulty.hard: DifficultyCoefficients(
-            frequency=1.0, duration=1.0, weeks=1.0, title_suffix="（穩健）"
+            frequency=1.0, duration=1.0, weeks=1.0, title_suffix=" (steady)"
         ),
         Difficulty.extremely_hard: DifficultyCoefficients(
-            frequency=1.3, duration=1.25, weeks=0.85, title_suffix="（挑戰）"
+            frequency=1.3, duration=1.25, weeks=0.85, title_suffix=" (challenge)"
         ),
     }
 )
@@ -42,25 +42,25 @@ def _phase(index: int, week_start: int, week_end: int) -> Phase:
 
 
 def _base(**overrides: Any) -> PlanTemplate:
-    """12 週、4 次/週、40 分的合法基準模板。"""
+    """A valid baseline template: 12 weeks, 4 sessions/week, 40 minutes each."""
     item_keys = {"times_per_week", "duration_minutes", "task_type", "day_hint", "slot_hint"}
     item_kwargs: dict[str, Any] = {
         "key": "long_run",
-        "title": "長距離慢跑",
+        "title": "long slow run",
         "task_type": "session",
         "day_hint": "any",
         "slot_hint": "morning",
         "duration_minutes": 40,
-        "description": "慢速跑 40 分鐘",
+        "description": "easy-pace run for 40 minutes",
         "times_per_week": 4,
     }
     item_kwargs.update({k: v for k, v in overrides.items() if k in item_keys})
     kwargs: dict[str, Any] = {
-        "title": "12 週 5K 跑進 30 分",
-        "goal_statement": "12 週後 5K 跑進 30 分",
+        "title": "sub-30 5K in 12 weeks",
+        "goal_statement": "run a 5K under 30 minutes within 12 weeks",
         "duration_weeks": 12,
-        "assumptions": ["每週可跑四次"],
-        "success_criteria": ["5K 成績 < 30:00", "連續四週無傷"],
+        "assumptions": ["can run four times a week"],
+        "success_criteria": ["5K time < 30:00", "four consecutive injury-free weeks"],
         "phases": [_phase(0, 0, 3), _phase(1, 4, 7), _phase(2, 8, 11)],
         "weekly_template": [WeeklyItem(**item_kwargs)],
     }
@@ -75,11 +75,11 @@ def test_hard_is_identity_except_title() -> None:
     out = derive(BASE, Difficulty.hard, CFG, None)
     assert out.duration_weeks == BASE.duration_weeks
     assert out.weekly_template == BASE.weekly_template
-    assert out.title.endswith("（穩健）")
+    assert out.title.endswith(" (steady)")
 
 
 def test_easy_reduces_frequency_and_extends_weeks() -> None:
-    out = derive(BASE, Difficulty.easy, CFG, None)  # BASE: 12 週, 4 次/週, 40 分
+    out = derive(BASE, Difficulty.easy, CFG, None)  # BASE: 12 weeks, 4x/week, 40 min
     assert out.duration_weeks == 15
     assert sum(i.times_per_week for i in out.weekly_template) == 2  # round(4*0.6)=2
     assert out.weekly_template[0].duration_minutes == 30  # round(40*0.75)
@@ -143,7 +143,7 @@ def test_pacing_lifts_short_sessions_to_minimum_minutes() -> None:
         missed_policy="none",
         intensity_bias="medium",
     )
-    out = derive(BASE, Difficulty.easy, CFG, pacing)  # 30 分 → 夾到 45
+    out = derive(BASE, Difficulty.easy, CFG, pacing)  # 30 min is clamped up to 45
     assert out.weekly_template[0].duration_minutes == 45
 
 
@@ -151,7 +151,7 @@ def test_rest_days_min_limits_weekly_sessions() -> None:
     pacing = Pacing(
         sessions_per_week=(1, 7),
         session_minutes=(20, 60),
-        rest_days_min=5,  # 一週最多排 2 天
+        rest_days_min=5,  # at most 2 training days per week
         progression_rate=0.05,
         missed_policy="none",
         intensity_bias="low",
@@ -162,7 +162,7 @@ def test_rest_days_min_limits_weekly_sessions() -> None:
 
 def test_duration_weeks_never_below_phase_count() -> None:
     base = _base(duration_weeks=3, phases=[_phase(0, 0, 0), _phase(1, 1, 1), _phase(2, 2, 2)])
-    out = derive(base, Difficulty.extremely_hard, CFG, None)  # round(3*0.85)=3 → 仍 >= 3
+    out = derive(base, Difficulty.extremely_hard, CFG, None)  # round(3*0.85)=3, still >= 3
     assert out.duration_weeks >= len(out.phases)
     assert out.phases[-1].week_end == out.duration_weeks - 1
 
@@ -170,7 +170,7 @@ def test_duration_weeks_never_below_phase_count() -> None:
 def test_non_session_items_are_not_touched_by_session_clamp() -> None:
     habit = WeeklyItem(
         key="sleep_log",
-        title="睡眠紀錄",
+        title="sleep log",
         task_type="habit",
         day_hint="any",
         slot_hint="evening",

@@ -1,4 +1,4 @@
-"""PgLlmCallRepo — llm_calls 表的 PostgreSQL 實作（僅追加）。"""
+"""PgLlmCallRepo — PostgreSQL implementation of the append-only llm_calls table."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from packages.repo.entities import LlmCallLog
 
 
 class PgLlmCallRepo:
-    """LlmCallRepo 的 PostgreSQL 實作。"""
+    """PostgreSQL LlmCallRepo."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory

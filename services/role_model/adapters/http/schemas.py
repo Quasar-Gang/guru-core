@@ -1,4 +1,4 @@
-"""HTTP 邊界的請求／回應 model（跨邊界資料一律 Pydantic）。"""
+"""Request and response models for the HTTP boundary (all boundary data is Pydantic)."""
 
 from typing import Any
 
@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class UpsertRoleModelRequest(BaseModel):
-    """`POST /role-models` 與 `PUT /role-models/{id}` 的 body。"""
+    """Body of `POST /role-models` and `PUT /role-models/{id}`."""
 
     kind: str
     name: str = Field(min_length=1)

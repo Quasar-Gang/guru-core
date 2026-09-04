@@ -1,4 +1,4 @@
-"""PgCheckinRepo — checkins 表的 PostgreSQL 實作。"""
+"""PgCheckinRepo — PostgreSQL implementation of the checkins table."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def _to_entity(row: models.Checkin) -> Checkin:
 
 
 class PgCheckinRepo:
-    """CheckinRepo 的 PostgreSQL 實作，以 (plan_id, checkin_date) 為唯一鍵。"""
+    """PostgreSQL CheckinRepo, keyed uniquely by (plan_id, checkin_date)."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory

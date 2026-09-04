@@ -1,18 +1,23 @@
 # packages/cache
 
-## 負責什麼
+## What it owns
 
-提供跨 service 共用的鍵值快取抽象：字串值的讀寫、TTL 過期，以及 rate limit 用的原子遞增計數器（`incr`）。
-正式實作為 `RedisCache`（`redis.asyncio`），測試與單機開發用 `DictCache`（行程內 dict，clock 可注入以測 TTL）。
+A shared key-value cache abstraction used across services: reading and writing string values, TTL
+expiry, and an atomic increment counter (`incr`) for rate limiting.
+The production implementation is `RedisCache` (`redis.asyncio`); tests and single-machine
+development use `DictCache`, an in-process dict with an injectable clock so TTL behaviour is
+testable.
 
-## 對外 port 有哪些
+## The ports it exposes
 
-- `CachePort`：`get(key)` / `set(key, value, ttl_seconds=None)` / `delete(key)` / `incr(key, ttl_seconds=None)`
-- 實作：`RedisCache(url)`（另有 `close()`）、`DictCache(clock=time.monotonic)`
+- `CachePort`: `get(key)` / `set(key, value, ttl_seconds=None)` / `delete(key)` / `incr(key, ttl_seconds=None)`
+- Implementations: `RedisCache(url)` (plus `close()`), `DictCache(clock=time.monotonic)`
 
-## 不負責什麼
+## What it does not do
 
-- 不是資料的權威來源。任務與 session 狀態的權威來源是 PostgreSQL，快取清空不得造成資料遺失。
-- 不做序列化：值一律由呼叫端轉成字串（JSON 等）後傳入。
-- 不做 rate limit 策略判斷（視窗長度、門檻、拒絕行為），只提供計數原語。
-- 不管理 pub/sub、佇列或分散式鎖（佇列見 `packages/queue`）。
+- It is not a source of truth. Job and session state live in PostgreSQL; flushing the cache must
+  never lose data.
+- It does not serialize: callers convert values to strings (JSON or otherwise) before passing them in.
+- It does not decide rate limit policy (window length, thresholds, rejection behaviour); it only
+  provides the counting primitive.
+- It does not handle pub/sub, queues or distributed locks (queues live in `packages/queue`).

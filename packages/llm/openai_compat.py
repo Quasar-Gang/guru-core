@@ -1,4 +1,7 @@
-"""OpenAICompatLLM：任何 OpenAI 相容端點（vLLM / Ollama / LM Studio / SGLang / TGI）。"""
+"""OpenAICompatLLM — adapter for any OpenAI-compatible endpoint.
+
+Covers vLLM, Ollama, LM Studio, SGLang and TGI.
+"""
 
 import json
 import time
@@ -26,7 +29,7 @@ _TOOL_NAME = "emit"
 
 
 class OpenAICompatLLM:
-    """以 `POST {base_url}/chat/completions` 取得結構化輸出。"""
+    """Get structured output from `POST {base_url}/chat/completions`."""
 
     def __init__(
         self,
@@ -145,5 +148,5 @@ def _parse(payload: dict[str, Any], output_schema: type[OutputT], *, tool_use: b
         raw = message["tool_calls"][0]["function"]["arguments"] if tool_use else message["content"]
         data = json.loads(raw) if isinstance(raw, str) else raw
         return output_schema.model_validate(data)
-    except Exception as exc:  # noqa: BLE001 - 統一轉成 port 的錯誤型別
+    except Exception as exc:  # noqa: BLE001 - normalise to the port's error type
         raise LLMSchemaError(f"cannot parse openai_compat response: {exc}") from exc

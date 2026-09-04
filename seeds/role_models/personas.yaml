@@ -1,6 +1,6 @@
-# 角色卡類 seed（PRD 14.2 P1–P9）。name 與 tags 逐格照 PRD 表格。
-# sections 寫「做法」而非「生平」——Plan Engine 只用得到可執行的方法論。
-# 這只是起始樣本，後續由團隊透過 POST /role-models 維護。
+# Persona seeds (PRD 14.2, P1-P9). Names and tags match the PRD table cell for cell.
+# Sections describe method, not biography - the Plan Engine only uses actionable guidance.
+# A starting sample only; the team maintains these through POST /role-models.
 role_models:
   - kind: persona
     name: Stephen Curry 型

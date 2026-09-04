@@ -1,1 +1,1 @@
-"""Role Model Service 的 adapters（HTTP）。"""
+"""Adapters for the Role Model Service (HTTP)."""

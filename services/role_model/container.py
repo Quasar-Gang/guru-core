@@ -1,7 +1,7 @@
-"""Role Model Service 的組裝點：唯一知道「用哪個實作」的地方。
+"""Composition root for the Role Model Service: the only place that picks implementations.
 
-`build_container()` 接正式依賴（PostgreSQL）；`build_test_container()` 全部用
-InMemory 實作，測試不需要 Docker。
+`build_container()` wires the production dependencies (PostgreSQL); `build_test_container()`
+wires in-memory ones so tests do not need Docker.
 """
 
 from dataclasses import dataclass
@@ -37,7 +37,7 @@ __all__ = [
 
 @dataclass(frozen=True)
 class RoleModelContainer:
-    """已接好線的 use case 與 port。Task 28 的推薦 use case 直接加欄位即可。"""
+    """The wired-up use cases and ports. Task 28's recommendation use case just adds a field."""
 
     settings: RoleModelSettings
     role_models: RoleModelRepo
@@ -48,7 +48,7 @@ class RoleModelContainer:
     list_tags: ListTags
 
     def create_app(self) -> FastAPI:
-        """本 container 的 ASGI app。"""
+        """The ASGI app for this container."""
         return create_app(self)
 
 
@@ -68,17 +68,17 @@ def _wire(
 
 
 def build_container(settings: RoleModelSettings | None = None) -> RoleModelContainer:
-    """正式組裝：PostgreSQL repo。"""
+    """Production wiring: PostgreSQL-backed repo."""
     settings = settings or RoleModelSettings()
     session_factory = build_session_factory(build_engine(settings.database_url))
     return _wire(settings, PgRoleModelRepo(session_factory))
 
 
 def build_test_container(**overrides: Any) -> RoleModelContainer:
-    """全 InMemory 組裝。
+    """Fully in-memory wiring.
 
-    未知的 key 視為 `RoleModelSettings` 欄位（例如 `tag_vocab_path`、
-    `role_model_api_key`）；`role_models` 可直接傳入自訂 repo。
+    Unrecognised keys are treated as `RoleModelSettings` fields (for example
+    `tag_vocab_path` or `role_model_api_key`); pass `role_models` to supply a custom repo.
     """
     role_models: RoleModelRepo = overrides.pop("role_models", None) or InMemoryRoleModelRepo()
     overrides.setdefault("role_model_api_key", "test-key")
@@ -90,5 +90,5 @@ def build_test_container(**overrides: Any) -> RoleModelContainer:
 
 
 def create_asgi_app() -> FastAPI:
-    """`cmd/role_model_server.py` 用的 uvicorn factory。"""
+    """The uvicorn factory used by `cmd/role_model_server.py`."""
     return build_container().create_app()

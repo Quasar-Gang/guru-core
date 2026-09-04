@@ -1,4 +1,4 @@
-# config/llm.yaml
+# One provider, not a provider list. To switch model or service, change these values.
 provider:
   adapter: ${LLM_ADAPTER:-fake}      # openai_compat | anthropic | fake
   base_url: ${LLM_BASE_URL:-http://127.0.0.1:8000/v1}
@@ -8,17 +8,17 @@ provider:
   max_context_tokens: ${LLM_MAX_CONTEXT:-16000}
   timeout_seconds: 180
 
-params:                              # 每種用途的參數，與 provider 無關
+params:                              # Per-purpose parameters, independent of the provider
   evaluate:  {temperature: 0.2, max_output_tokens: 1500}
   generate:  {temperature: 0.4, max_output_tokens: 4000}
   revise:    {temperature: 0.3, max_output_tokens: 3000}
   recommend: {temperature: 0.3, max_output_tokens: 800}
 
-budgets:                             # role model context 預算
+budgets:                             # Role model context budget in tokens (PRD 12.6)
   evaluate: 100
   generate: 300
   revise: 200
   recommend: 600
 
 retry:
-  max_attempts: 3                    # schema 或業務規則驗證失敗時回灌錯誤重試
+  max_attempts: 3                    # Retries when schema or business-rule validation fails, feeding the errors back

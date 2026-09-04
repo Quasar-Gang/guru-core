@@ -1,1 +1,1 @@
-"""API Service domain 層 — 純 Python，零框架 import。"""
+"""API service domain layer: plain Python, no framework imports."""

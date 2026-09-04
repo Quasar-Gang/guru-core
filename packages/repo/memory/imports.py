@@ -1,4 +1,4 @@
-"""InMemoryImportRepo — 測試用的記憶體實作。"""
+"""InMemoryImportRepo — in-memory implementation for tests."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from packages.repo.entities import Import
 
 
 class InMemoryImportRepo:
-    """把 imports 放在 process 記憶體中的 ImportRepo 實作。"""
+    """ImportRepo implementation that keeps imports in process memory."""
 
     def __init__(self) -> None:
         self._imports: dict[UUID, Import] = {}

@@ -1,1 +1,1 @@
-"""InMemory repo 實作 — 公開介面請從 `packages.repo` import。"""
+"""In-memory repo implementations — import the public names from `packages.repo`."""

@@ -1,4 +1,4 @@
-"""`/role-models*` 路由（Role Model Service，port 8001）。"""
+"""`/role-models*` routes (Role Model Service, port 8001)."""
 
 from typing import TYPE_CHECKING, Annotated, Literal
 from uuid import UUID
@@ -9,7 +9,7 @@ from services.role_model.adapters.http.deps import api_key_guard
 from services.role_model.adapters.http.schemas import UpsertRoleModelRequest
 from services.role_model.application import RoleModelSummary, RoleModelView
 
-if TYPE_CHECKING:  # pragma: no cover - 只為型別，避免 container ↔ adapters 迴圈 import
+if TYPE_CHECKING:  # pragma: no cover - type-only, avoids a container <-> adapters import cycle
     from services.role_model.container import RoleModelContainer
 
 
@@ -20,7 +20,7 @@ def build_router(container: "RoleModelContainer") -> APIRouter:
     @router.get("", response_model=list[RoleModelSummary])
     async def list_role_models(
         kind: str | None = None,
-        tags: Annotated[list[str], Query()] = [],  # noqa: B006 - FastAPI query 預設值
+        tags: Annotated[list[str], Query()] = [],  # noqa: B006 - FastAPI query default
         match: Literal["any", "all"] = "any",
         limit: Annotated[int, Query(ge=1, le=200)] = 50,
     ) -> list[RoleModelSummary]:

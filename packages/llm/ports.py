@@ -1,4 +1,4 @@
-"""LLMPort 與其型別：呼叫端只認識 prompt 名稱、context 與輸出 schema。"""
+"""LLMPort and its types: callers only deal in prompt names, context and an output schema."""
 
 from enum import StrEnum
 from typing import Any, Protocol, TypeVar
@@ -16,7 +16,7 @@ __all__ = [
 
 
 class Purpose(StrEnum):
-    """呼叫用途，決定溫度、輸出長度與 role model context 預算。"""
+    """Call purpose; selects temperature, output length and role model context budget."""
 
     evaluate = "evaluate"
     generate = "generate"
@@ -38,12 +38,12 @@ class LLMPort(Protocol):
 
 
 class LLMError(RuntimeError):
-    """LLM 呼叫失敗的共同基底。"""
+    """Base class for every LLM call failure."""
 
 
 class LLMSchemaError(LLMError):
-    """回應無法通過 Pydantic 驗證。"""
+    """The response failed Pydantic validation."""
 
 
 class LLMTransportError(LLMError):
-    """網路 / HTTP 層失敗。"""
+    """The network or HTTP layer failed."""

@@ -1,4 +1,4 @@
-"""FastAPI app 組裝：路由掛在 `/v1`，DomainError 對應成 HTTP status。"""
+"""FastAPI app wiring: routes are mounted under `/v1` and DomainErrors map to HTTP statuses."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from services.api.domain.errors import (
     Unauthorized,
 )
 
-if TYPE_CHECKING:  # pragma: no cover - 只為型別；避免 container ↔ adapters 循環 import
+if TYPE_CHECKING:  # pragma: no cover - typing only; avoids a container <-> adapters import cycle
     from services.api.container import ApiContainer
 
 __all__ = ["API_PREFIX", "STATUS_BY_ERROR", "create_app", "error_code"]
@@ -41,7 +41,7 @@ _CAMEL_BOUNDARY = re.compile(r"(?<!^)(?=[A-Z])")
 
 
 def error_code(exc: DomainError) -> str:
-    """類名轉 snake_case：`ReauthRequired` -> `reauth_required`。"""
+    """Convert the class name to snake_case: `ReauthRequired` -> `reauth_required`."""
     return _CAMEL_BOUNDARY.sub("_", type(exc).__name__).lower()
 
 
@@ -67,7 +67,7 @@ async def _validation_error_handler(request: Request, exc: Exception) -> JSONRes
 
 
 def create_app(container: ApiContainer) -> FastAPI:
-    """組出 API Service 的 FastAPI app；所有依賴都從 `container` 取。"""
+    """Build the API service FastAPI app; every dependency comes from `container`."""
     app = FastAPI(title="guru-core API", version="0.1.0")
     app.state.container = container
 
@@ -76,7 +76,7 @@ def create_app(container: ApiContainer) -> FastAPI:
 
     @app.get("/health", tags=["ops"])
     async def health() -> dict[str, str]:
-        """不需認證，後續限流也排除它。"""
+        """Unauthenticated, and exempt from rate limiting once that lands."""
         return {"status": "ok"}
 
     app.include_router(auth_router, prefix=API_PREFIX)

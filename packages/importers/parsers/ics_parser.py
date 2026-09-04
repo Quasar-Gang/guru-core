@@ -1,4 +1,4 @@
-"""ICS parser：每個 VEVENT 一個 DocEvent。"""
+"""ICS parser: one DocEvent per VEVENT."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from packages.importers.ports import RawBlob
 
 
 def _to_utc(value: object) -> tuple[datetime, bool] | None:
-    """回 (UTC aware datetime, 是否為全天)。無法辨識時回 None。"""
+    """Return (UTC-aware datetime, is_all_day), or None when the value is unrecognised."""
     if isinstance(value, datetime):
         if value.tzinfo is None:
             return value.replace(tzinfo=UTC), False
@@ -22,7 +22,7 @@ def _to_utc(value: object) -> tuple[datetime, bool] | None:
 
 
 class IcsParser:
-    """解析 iCalendar，DTSTART;VALUE=DATE 視為全天事件。"""
+    """Parse iCalendar; DTSTART;VALUE=DATE is treated as an all-day event."""
 
     def supports(self, fmt: str) -> bool:
         return fmt == "ics"
@@ -57,10 +57,10 @@ class IcsParser:
 
 
 def _prop(component: object, key: str) -> object:
-    value = component.get(key)  # type: ignore[attr-defined]  # icalendar 未提供型別資訊
+    value = component.get(key)  # type: ignore[attr-defined]  # icalendar ships no type hints
     return getattr(value, "dt", None) if value is not None else None
 
 
 def _text(component: object, key: str) -> str:
-    value = component.get(key)  # type: ignore[attr-defined]  # icalendar 未提供型別資訊
+    value = component.get(key)  # type: ignore[attr-defined]  # icalendar ships no type hints
     return "" if value is None else str(value).strip()

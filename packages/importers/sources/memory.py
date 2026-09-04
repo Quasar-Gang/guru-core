@@ -1,10 +1,10 @@
-"""InMemorySource — 測試用的 SourcePort 實作。"""
+"""InMemorySource — SourcePort implementation for tests."""
 
 from packages.importers.ports import RawBlob
 
 
 class InMemorySource:
-    """直接回傳建構時給定的 blob。"""
+    """Return the blob supplied at construction time."""
 
     def __init__(self, blob: RawBlob) -> None:
         self._blob = blob

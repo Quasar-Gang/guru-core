@@ -1,4 +1,4 @@
-"""FakeLLM：開發與測試用的 LLMPort 實作，回應來自固定 fixture。"""
+"""FakeLLM — LLMPort implementation for development and tests, answering from fixtures."""
 
 import json
 from collections.abc import Mapping
@@ -11,7 +11,7 @@ __all__ = ["FakeLLM"]
 
 
 class FakeLLM:
-    """依 prompt 名稱回傳固定回應；`overrides` 優先於 `fixtures_dir` 的檔案。"""
+    """Return a canned response per prompt name; `overrides` wins over `fixtures_dir`."""
 
     def __init__(
         self,
@@ -33,7 +33,7 @@ class FakeLLM:
         payload = self._payload(prompt_name)
         try:
             return output_schema.model_validate(payload)
-        except Exception as exc:  # noqa: BLE001 - 統一轉成 port 的錯誤型別
+        except Exception as exc:  # noqa: BLE001 - normalise to the port's error type
             raise LLMSchemaError(
                 f"fixture for {prompt_name!r} does not match schema: {exc}"
             ) from exc

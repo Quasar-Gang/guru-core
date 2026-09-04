@@ -1,4 +1,4 @@
-"""InMemoryCheckinRepo — 測試用的記憶體實作。"""
+"""InMemoryCheckinRepo — in-memory implementation for tests."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from packages.repo.entities import Checkin
 
 
 class InMemoryCheckinRepo:
-    """把 checkins 放在記憶體中，以 (plan_id, checkin_date) 為唯一鍵。"""
+    """Keeps checkins in memory, keyed uniquely by (plan_id, checkin_date)."""
 
     def __init__(self) -> None:
         self._checkins: dict[tuple[UUID, date], Checkin] = {}

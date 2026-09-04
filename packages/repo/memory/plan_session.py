@@ -1,4 +1,4 @@
-"""InMemoryPlanSessionRepo — 測試用的記憶體實作。"""
+"""InMemoryPlanSessionRepo — in-memory implementation for tests."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from packages.repo.entities import PlanSession
 
 
 class InMemoryPlanSessionRepo:
-    """把 plan_sessions 放在 process 記憶體中的 PlanSessionRepo 實作。"""
+    """PlanSessionRepo implementation that keeps plan_sessions in process memory."""
 
     def __init__(self) -> None:
         self._sessions: dict[UUID, PlanSession] = {}

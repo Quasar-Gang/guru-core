@@ -12,8 +12,8 @@ def _q(qid: str, metric_id: str, options: list[str] | None = None) -> FollowupQu
     return FollowupQuestion(
         id=qid,
         metric_id=metric_id,
-        text=f"關於 {metric_id} 想確認一下？",
-        options=options or ["選項一", "選項二", "選項三"],
+        text=f"Just checking on {metric_id}?",
+        options=options or ["option one", "option two", "option three"],
     )
 
 
@@ -69,7 +69,7 @@ def test_readiness_rule_rejects_non_distinct_options():
     out = ReadinessOutput(
         ready=False,
         missing=["capacity"],
-        questions=[_q("q1", "capacity", ["一樣", "一樣", "不一樣"])],
+        questions=[_q("q1", "capacity", ["same", "same", "different"])],
     )
     assert any("options" in v for v in _violations(out))
 
@@ -78,7 +78,7 @@ def test_readiness_rule_rejects_blank_option():
     out = ReadinessOutput(
         ready=False,
         missing=["capacity"],
-        questions=[_q("q1", "capacity", ["一", "  ", "三"])],
+        questions=[_q("q1", "capacity", ["one", "  ", "three"])],
     )
     assert any("options" in v for v in _violations(out))
 

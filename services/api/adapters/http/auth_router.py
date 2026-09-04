@@ -1,4 +1,4 @@
-"""登入與「我是誰」端點。"""
+"""Login and current-user endpoints."""
 
 from fastapi import APIRouter, Request
 

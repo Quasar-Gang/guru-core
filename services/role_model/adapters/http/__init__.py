@@ -1,4 +1,4 @@
-"""Role Model Service 的 HTTP adapter。"""
+"""HTTP adapter for the Role Model Service."""
 
 from services.role_model.adapters.http.app import create_app
 

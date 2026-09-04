@@ -1,4 +1,4 @@
-"""StoragePort — 物件儲存的對外介面與共用型別。"""
+"""StoragePort — the object storage interface and its shared types."""
 
 from typing import Protocol
 
@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 
 class StoredObject(BaseModel):
-    """一個已寫入的物件的中繼資料。"""
+    """Metadata describing a stored object."""
 
     key: str
     size: int
@@ -14,11 +14,11 @@ class StoredObject(BaseModel):
 
 
 class ObjectNotFound(KeyError):
-    """讀取不存在的 key 時拋出。"""
+    """Raised when reading a key that does not exist."""
 
 
 class StoragePort(Protocol):
-    """物件儲存 port。"""
+    """Object storage port."""
 
     async def put(self, key: str, data: bytes, content_type: str) -> StoredObject: ...
 

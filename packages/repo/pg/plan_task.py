@@ -1,4 +1,4 @@
-"""PgPlanTaskRepo — plan_tasks 表的 PostgreSQL 實作。"""
+"""PgPlanTaskRepo — PostgreSQL implementation of the plan_tasks table."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def _to_entity(row: models.PlanTask) -> PlanTask:
 
 
 def _dirty_clause() -> ColumnElement[bool]:
-    """尚未同步，或同步後又被改動過（以 completed_at 代表改動）。"""
+    """Never synced, or changed since the last sync; completed_at stands in for a change."""
     return or_(
         models.PlanTask.synced_at.is_(None),
         models.PlanTask.completed_at > models.PlanTask.synced_at,
@@ -49,7 +49,7 @@ def _dirty_clause() -> ColumnElement[bool]:
 
 
 class PgPlanTaskRepo:
-    """PlanTaskRepo 的 PostgreSQL 實作。"""
+    """PostgreSQL PlanTaskRepo."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory

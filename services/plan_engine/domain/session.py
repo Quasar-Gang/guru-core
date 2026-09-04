@@ -1,4 +1,4 @@
-"""Plan session 狀態機（PRD 3.1）。"""
+"""Plan session state machine (PRD 3.1)."""
 
 from enum import StrEnum
 
@@ -27,11 +27,11 @@ TRANSITIONS: dict[SessionStatus, frozenset[SessionStatus]] = {
 
 
 def assert_transition(current: SessionStatus, target: SessionStatus) -> None:
-    """非法轉移時 raise IllegalTransition。"""
+    """Raise ``IllegalTransition`` if the move is not allowed."""
     if target not in TRANSITIONS[current]:
         raise IllegalTransition(f"cannot move session from {current} to {target}")
 
 
 def is_terminal(status: SessionStatus) -> bool:
-    """終態沒有任何後續轉移。"""
+    """A terminal status has no outgoing transitions."""
     return not TRANSITIONS[status]

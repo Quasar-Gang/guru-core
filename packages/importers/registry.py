@@ -1,4 +1,4 @@
-"""格式偵測與 parser 選擇。"""
+"""Format detection and parser selection."""
 
 from collections.abc import Sequence
 
@@ -38,9 +38,10 @@ _CONTENT_TYPES: dict[str, str] = {
 
 
 def detect_format(filename: str, content_type: str) -> str:
-    """回 "csv" | "xlsx" | "md" | "html" | "pdf" | "docx" | "ics"。
+    """Return "csv" | "xlsx" | "md" | "html" | "pdf" | "docx" | "ics".
 
-    副檔名優先（大小寫不敏感），判不出來才看 content_type；都判不出來則 raise。
+    The file extension wins (case-insensitively); the content type is only consulted when
+    the extension is unknown. Raises UnsupportedFormat when neither identifies a format.
     """
     _, _, extension = filename.rpartition(".")
     fmt = _EXTENSIONS.get(extension.lower())
@@ -58,7 +59,7 @@ def detect_format(filename: str, content_type: str) -> str:
 
 
 class ParserRegistry:
-    """依 detect_format 的結果挑選 parser。"""
+    """Pick a parser based on the result of detect_format."""
 
     def __init__(self, parsers: Sequence[ParserPort]) -> None:
         self._parsers = tuple(parsers)
@@ -72,7 +73,7 @@ class ParserRegistry:
 
 
 def default_registry() -> ParserRegistry:
-    """正式使用的 registry：註冊七個 parser（csv / xlsx / md / html / pdf / docx / ics）。"""
+    """Production registry with all seven parsers: csv, xlsx, md, html, pdf, docx, ics."""
     return ParserRegistry(
         (
             CsvParser(),

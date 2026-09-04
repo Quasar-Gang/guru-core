@@ -1,4 +1,4 @@
-"""AnthropicLLM：以 tool use 強制 schema 的 Claude API adapter。"""
+"""AnthropicLLM — Claude API adapter that enforces the output schema via tool use."""
 
 import time
 from typing import TYPE_CHECKING, Any
@@ -26,7 +26,7 @@ _DEFAULT_BASE_URL = "https://api.anthropic.com"
 
 
 class AnthropicLLM:
-    """以 `POST {base_url}/v1/messages` 取得結構化輸出。"""
+    """Get structured output from `POST {base_url}/v1/messages`."""
 
     def __init__(
         self,
@@ -123,6 +123,6 @@ def _parse(payload: dict[str, Any], output_schema: type[OutputT]) -> OutputT:
         if isinstance(block, dict) and block.get("type") == "tool_use":
             try:
                 return output_schema.model_validate(block.get("input"))
-            except Exception as exc:  # noqa: BLE001 - 統一轉成 port 的錯誤型別
+            except Exception as exc:  # noqa: BLE001 - normalise to the port's error type
                 raise LLMSchemaError(f"anthropic tool_use input is invalid: {exc}") from exc
     raise LLMSchemaError("anthropic response has no tool_use block")

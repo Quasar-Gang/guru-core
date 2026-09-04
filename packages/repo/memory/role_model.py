@@ -1,4 +1,4 @@
-"""InMemoryRoleModelRepo — 測試用的記憶體實作。"""
+"""InMemoryRoleModelRepo — in-memory implementation for tests."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from packages.repo.entities import RoleModel
 
 
 class InMemoryRoleModelRepo:
-    """把 role_models 放在 process 記憶體中的 RoleModelRepo 實作。"""
+    """RoleModelRepo implementation that keeps role_models in process memory."""
 
     def __init__(self) -> None:
         self._role_models: dict[UUID, RoleModel] = {}

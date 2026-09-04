@@ -1,4 +1,4 @@
-"""PgPlanRevisionRepo — plan_revisions 表的 PostgreSQL 實作。"""
+"""PgPlanRevisionRepo — PostgreSQL implementation of the plan_revisions table."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def _to_entity(row: models.PlanRevision) -> PlanRevision:
 
 
 class PgPlanRevisionRepo:
-    """PlanRevisionRepo 的 PostgreSQL 實作。"""
+    """PostgreSQL PlanRevisionRepo."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory

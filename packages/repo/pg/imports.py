@@ -1,4 +1,4 @@
-"""PgImportRepo — imports 表的 PostgreSQL 實作。"""
+"""PgImportRepo — PostgreSQL implementation of the imports table."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def _to_entity(row: models.Import) -> Import:
 
 
 class PgImportRepo:
-    """ImportRepo 的 PostgreSQL 實作。"""
+    """PostgreSQL ImportRepo."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory

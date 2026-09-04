@@ -1,7 +1,7 @@
-"""SQLAlchemy ORM models — 全 service 共用的單一 PostgreSQL schema。
+"""SQLAlchemy ORM models — the single PostgreSQL schema shared by every service.
 
-每個 model 的 docstring 第一行必須是 "Owner: <service>"（PRD 4.2）：
-只有 owner service 可以寫該表，其餘 service 只讀。
+The first line of each model docstring must be "Owner: <service>" (PRD 4.2): only the
+owning service may write to that table, every other service reads it.
 """
 
 from __future__ import annotations
@@ -140,7 +140,9 @@ class RoleModel(Base):
 
 
 class PlanSession(Base):
-    """Owner: Plan Engine（建立與 answers 寫入由 API Service 負責，狀態轉移由 Plan Engine）."""
+    """Owner: Plan Engine. The API Service creates rows and writes answers; the Plan Engine
+    owns state transitions.
+    """
 
     __tablename__ = "plan_sessions"
 
@@ -186,7 +188,7 @@ class FollowupRound(Base):
 
 
 class Plan(Base):
-    """Owner: Plan Engine 建立；建立後的管理欄位由 API Service 寫."""
+    """Owner: Plan Engine creates rows; the API Service writes the management columns."""
 
     __tablename__ = "plans"
 
@@ -215,7 +217,7 @@ class Plan(Base):
 
 
 class PlanTask(Base):
-    """Owner: Plan Engine 建立；任務完成與時間由 API Service 寫."""
+    """Owner: Plan Engine creates rows; the API Service writes completion and timing."""
 
     __tablename__ = "plan_tasks"
     __table_args__ = (
@@ -264,7 +266,9 @@ class Checkin(Base):
 
 
 class PlanRevision(Base):
-    """Owner: Plan Engine 建立與寫 proposed_tasks/diff；status 由 API Service 寫."""
+    """Owner: Plan Engine creates rows and writes proposed_tasks/diff; the API Service writes
+    status.
+    """
 
     __tablename__ = "plan_revisions"
 
@@ -302,7 +306,7 @@ class PlanExport(Base):
 
 
 class LlmCall(Base):
-    """Owner: 所有 service（僅追加，不更新）."""
+    """Owner: every service. Append-only; rows are never updated."""
 
     __tablename__ = "llm_calls"
 

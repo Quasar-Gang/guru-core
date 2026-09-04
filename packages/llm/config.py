@@ -1,4 +1,4 @@
-"""`config/llm.yaml` 的 Pydantic model 與載入函式。"""
+"""Pydantic models and loader for `config/llm.yaml`."""
 
 from pathlib import Path
 from typing import Literal

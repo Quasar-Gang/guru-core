@@ -1,4 +1,4 @@
-"""Scheduler 的 11 條排程規則（PRD 4.3.2）。"""
+"""The scheduler's 11 placement rules (PRD 4.3.2)."""
 
 from __future__ import annotations
 
@@ -189,7 +189,7 @@ def test_times_per_week_three_spreads_across_week() -> None:
     run = sorted(_of(r.tasks, "run"), key=lambda t: t.start_at)
     days = [t.start_at.date() for t in run]
     assert len(set(days)) == 3
-    # 平均分佈到 7 個候選日 -> 索引 0 / 3 / 6
+    # evenly spread over the 7 candidate days -> indices 0 / 3 / 6
     assert [(d - MONDAY).days for d in days] == [0, 3, 6]
     assert all((b - a).days >= 1 for a, b in zip(days, days[1:], strict=False))
     assert [t.occurrence for t in run] == [0, 1, 2]
@@ -207,7 +207,7 @@ def test_slot_hint_morning_lands_in_morning_window() -> None:
 
 def test_slot_hint_any_falls_back_through_slot_order() -> None:
     tuesday = MONDAY + timedelta(days=1)
-    # 週二整個 morning 被佔滿 -> slot_order 的下一個是 evening（而非 noon）
+    # Tuesday morning is fully booked -> the next slot in slot_order is evening, not noon
     busy = [BusyBlock(start_at=_utc(day, 6), end_at=_utc(day, 10)) for day in (MONDAY, tuesday)]
     r = _run(_tpl([_item("run", "tue", "any", 30)]), busy=busy)
     task = _of(r.tasks, "run")[0]
@@ -250,7 +250,8 @@ def test_conflict_shift_never_crosses_the_week_boundary() -> None:
     busy = [BusyBlock(start_at=_utc(sunday, 0), end_at=_utc(sunday, 23, 59))]
     r = _run(_tpl([_item("run", "sun", "morning", 60)], duration_weeks=2), busy=busy)
     run = _of(r.tasks, "run")
-    # 第 0 週的週日排不下，往後只會走到下週一 -> 跨週，禁止；第 1 週不受影響
+    # week 0 Sunday does not fit and shifting lands in week 1, which is not allowed;
+    # week 1 itself is unaffected
     assert [t.week_index for t in run] == [1]
     assert run[0].start_at.date() == MONDAY + timedelta(days=13)
     assert r.unplaced == ["run"]
@@ -263,7 +264,7 @@ def test_unplaceable_task_recorded_in_unplaced_not_raised() -> None:
     )
     assert "run" in r.unplaced
     assert _of(r.tasks, "run") == []
-    # 唯一產出的是規則 7 的 checkpoint（全天任務不受 capacity 限制）
+    # the only task produced is the rule 7 checkpoint (all-day tasks ignore capacity)
     assert {t.task_type for t in r.tasks} == {"checkpoint"}
 
 
@@ -315,7 +316,7 @@ def test_pacing_min_violation_recorded() -> None:
 
 def test_pacing_rest_days_violation_recorded() -> None:
     pacing = _pacing(sessions_per_week=(0, 7), rest_days_min=2)
-    # 一週排 6 天 -> 只休 1 天 -> 違規
+    # 6 training days a week leaves only 1 rest day -> violation
     r = _run(_tpl([_item("a", "any", "any", 30, times=6)]), pacing=pacing)
     assert any(v.rule == "rest_days_min" for v in r.violations)
 
@@ -382,10 +383,10 @@ def test_timezone_conversion_produces_local_morning() -> None:
 
 
 def test_dst_spring_forward_keeps_local_wall_clock() -> None:
-    # 2027-03-14 是 America/New_York 的春季調時（02:00 -> 03:00）。
+    # 2027-03-14 is the America/New_York spring-forward date (02:00 -> 03:00).
     cap = Capacity.default("America/New_York")
     tz = ZoneInfo("America/New_York")
-    start = date(2027, 3, 8)  # 週一
+    start = date(2027, 3, 8)  # Monday
     r = _run(
         _tpl([_item("run", "any", "morning", 30, times=7)], duration_weeks=1),
         start_date=start,
@@ -395,5 +396,5 @@ def test_dst_spring_forward_keeps_local_wall_clock() -> None:
     assert len(run) == 7
     locals_ = [t.start_at.astimezone(tz) for t in run]
     assert all(7 <= dt.hour < 9 for dt in locals_)
-    # 調時前後的 UTC offset 不同，但當地時刻不變
+    # the UTC offset differs across the transition, but the local wall clock does not
     assert {dt.utcoffset() for dt in locals_} == {timedelta(hours=-5), timedelta(hours=-4)}

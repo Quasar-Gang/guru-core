@@ -1,29 +1,43 @@
 # packages/storage
 
-## 負責什麼
+## What it owns
 
-提供物件儲存的抽象與實作：把 bytes 以 key 寫入／讀出／刪除，回報是否存在，並產生有時效的預簽章 URL（presigned URL），讓前端可以直接上傳或下載而不經過應用程式。
+The object storage abstraction and its implementations: write, read and delete bytes by key, report
+whether a key exists, and mint time-limited presigned URLs so the frontend can upload and download
+directly without going through the application.
 
-目前提供兩個實作：
+Two implementations ship today:
 
-- `LocalFileStorage`：MVP 的正式實作。物件寫在本機目錄的 `root` 底下，`content_type` 存成同名的 `.meta` sidecar JSON；presign 產生指向本地 API 的 `{public_base_url}/{key}?exp=…&op=…&sig=…`，簽章為 `HMAC-SHA256(signing_secret, "{op}:{key}:{exp}")` 的十六進位字串，可用 `LocalFileStorage.verify_signature(...)` 驗證。key 一律拒絕絕對路徑與 `..`，父目錄自動建立。
-- `InMemoryStorage`：測試與本機開發用，資料放在 process 記憶體，presign 回傳 `memory://{op}/{key}?exp=…`。
+- `LocalFileStorage`: the MVP production implementation. Objects are written under `root` on the
+  local filesystem and `content_type` is kept in a sibling `.meta` JSON sidecar. Presigning yields
+  `{public_base_url}/{key}?exp=…&op=…&sig=…`, where the signature is the hex digest of
+  `HMAC-SHA256(signing_secret, "{op}:{key}:{exp}")` and can be checked with
+  `LocalFileStorage.verify_signature(...)`. Absolute keys and keys containing `..` are always
+  rejected; parent directories are created on demand.
+- `InMemoryStorage`: for tests and local development. Data lives in process memory and presigning
+  returns `memory://{op}/{key}?exp=…`.
 
-## 對外 port 有哪些
+## The ports it exposes
 
-`packages.storage.__all__` 明列的介面：
+The names listed in `packages.storage.__all__`:
 
-- `StoragePort`（Protocol）：`put` / `get` / `delete` / `exists` / `presign_put` / `presign_get`
-- `StoredObject`（Pydantic model）：`key`、`size`、`content_type`
-- `ObjectNotFound`（`KeyError` 子類別）：`get` 讀取不存在的 key 時拋出
-- `LocalFileStorage`、`InMemoryStorage`：兩個實作
+- `StoragePort` (Protocol): `put` / `get` / `delete` / `exists` / `presign_put` / `presign_get`
+- `StoredObject` (Pydantic model): `key`, `size`, `content_type`
+- `ObjectNotFound` (subclass of `KeyError`): raised by `get` for a missing key
+- `LocalFileStorage`, `InMemoryStorage`: the two implementations
 
-其餘模組（`ports.py`、`local.py`、`memory.py`）視為 private，請一律 `from packages.storage import ...`。
+Every other module (`ports.py`, `local.py`, `memory.py`) is private — always import from
+`packages.storage`.
 
-## 不負責什麼
+## What it does not do
 
-- 不負責檔案內容的解析或轉換（那是 `packages/importers` 的事）。
-- 不負責 metadata 的持久化與查詢（檔案紀錄存在資料庫，由 `packages/repo` 負責）；`.meta` sidecar 只是 `LocalFileStorage` 記住 content_type 的實作細節。
-- 不負責驗證 presigned URL 的 HTTP 端點；`verify_signature` 只提供判斷函式，路由與權限檢查在 API service。
-- 不負責授權與資料隔離，呼叫端須自行把 `user_id` 編進 key。
-- 不負責 Cloudflare R2（`R2Storage` 是後續 task）、CDN、生命週期規則或病毒掃描。
+- It does not parse or convert file contents (that is `packages/importers`).
+- It does not persist or query metadata (file records live in the database, owned by
+  `packages/repo`); the `.meta` sidecar is purely an implementation detail of how
+  `LocalFileStorage` remembers a content type.
+- It does not serve the HTTP endpoint that validates presigned URLs; `verify_signature` is only the
+  predicate, while routing and authorization live in the API service.
+- It does not handle authorization or tenant isolation — callers are responsible for encoding
+  `user_id` into the key.
+- It does not cover Cloudflare R2 (`R2Storage` is a later task), CDNs, lifecycle rules or virus
+  scanning.

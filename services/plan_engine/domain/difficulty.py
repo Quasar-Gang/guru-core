@@ -1,8 +1,8 @@
-"""從一份基準 PlanTemplate 推導三種難度（PRD 4.3.1.1）。
+"""Derive the three difficulty variants from one baseline PlanTemplate (PRD 4.3.1.1).
 
-LLM 只產一份基準模板，easy / hard / extremely_hard 三份由這裡的係數換算出來，
-再用 trait role model 的 ``pacing`` 上下限夾住。三份共用同一個
-``goal_statement`` / ``success_criteria`` / ``assumptions``。
+The LLM produces a single baseline template; easy / hard / extremely_hard are scaled from it
+by the coefficients here and then clamped to the ``pacing`` bounds of the trait role model.
+All three share the same ``goal_statement``, ``success_criteria`` and ``assumptions``.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ class Difficulty(StrEnum):
 
 
 class DifficultyCoefficients(BaseModel):
-    """單一難度的換算係數。"""
+    """Scaling coefficients for one difficulty."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -50,7 +50,7 @@ class DifficultyCoefficients(BaseModel):
 
 
 class DifficultyConfig(BaseModel):
-    """``config/difficulty_coefficients.yaml`` 的內容。"""
+    """Contents of ``config/difficulty_coefficients.yaml``."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -58,12 +58,13 @@ class DifficultyConfig(BaseModel):
 
 
 class Pacing(BaseModel):
-    """trait role model 的硬約束。
+    """Hard constraints coming from the trait role model.
 
-    Deliberate duplicate: Role Model 在 ``services/role_model/domain/content.py``
-    有一份同名同欄位的定義。Service 之間禁止互相 import，兩份以 JSON 為契約
-    ——契約是 ``role_models.content["pacing"]``，經 ``plan_sessions.context_snapshot``
-    傳到這裡再用 ``Pacing.model_validate(dict)`` 讀回。改一邊就要改另一邊。
+    Deliberate duplicate: Role Model defines the same name and the same fields in
+    ``services/role_model/domain/content.py``. Services must not import each other, so the
+    two copies are bound by a JSON contract — ``role_models.content["pacing"]``, carried here
+    through ``plan_sessions.context_snapshot`` and read back with
+    ``Pacing.model_validate(dict)``. Change one side and you must change the other.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -78,7 +79,7 @@ class Pacing(BaseModel):
 
 
 def load_difficulty_config(path: Path | None = None) -> DifficultyConfig:
-    """讀難度係數設定，預設 ``config/difficulty_coefficients.yaml``。"""
+    """Load the difficulty coefficients; defaults to ``config/difficulty_coefficients.yaml``."""
     return load_yaml_config(path or CONFIG_DIR / "difficulty_coefficients.yaml", DifficultyConfig)
 
 
@@ -88,29 +89,29 @@ def derive(
     config: DifficultyConfig,
     pacing: Pacing | None,
 ) -> PlanTemplate:
-    """依係數與 pacing 推導出指定難度的模板。
+    """Derive the template for one difficulty from the coefficients and the pacing bounds.
 
-    ``duration_weeks`` 的下限是 ``len(base.phases)``：每個 phase 至少要佔一週，
-    phases 必須連續且覆蓋全期，週數少於 phase 數就無解，因此係數算出來太小時
-    會被提到 phase 數。
+    ``duration_weeks`` is floored at ``len(base.phases)``: every phase needs at least one
+    week, and phases must stay contiguous and cover the whole plan, so fewer weeks than
+    phases has no solution. A coefficient that scales below that floor is raised to it.
     """
     coefficients = config.coefficients[difficulty]
 
-    # 1. 週數
+    # 1. Number of weeks.
     weeks = max(1, round(base.duration_weeks * coefficients.weeks), len(base.phases))
 
-    # 2. 每週項目的次數與時長
+    # 2. Frequency and duration of each weekly item.
     items = [_scale_item(item, coefficients) for item in base.weekly_template]
 
-    # 3. phases 依新週數等比例重算
+    # 3. Rescale the phases proportionally to the new week count.
     phases = _rescale_phases(base.phases, base.duration_weeks, weeks)
 
-    # 4. pacing 夾住
+    # 4. Clamp to the pacing bounds.
     if pacing is not None:
         items = _apply_pacing(items, pacing)
 
-    # 5–6. title 加後綴，goal_statement / success_criteria / assumptions 原樣沿用。
-    # 走 model_validate 而非 model_copy，讓 PlanTemplate 的 phases 覆蓋驗證真的跑到。
+    # 5-6. Suffix the title; goal_statement / success_criteria / assumptions carry over as is.
+    # Go through model_validate rather than model_copy so the phase coverage validator runs.
     return PlanTemplate.model_validate(
         {
             **base.model_dump(),
@@ -137,18 +138,19 @@ def _scale_item(item: WeeklyItem, coefficients: DifficultyCoefficients) -> Weekl
 
 
 def _rescale_phases(phases: list[Phase], old_weeks: int, new_weeks: int) -> list[Phase]:
-    """等比例換算每個 phase 的週界，保持連續、覆蓋全期、每個至少一週。"""
+    """Rescale phase boundaries proportionally, keeping them contiguous, complete, >= 1 week."""
     count = len(phases)
-    # 每個 phase 的結束界（exclusive），等比例換算。
+    # Exclusive end boundary of each phase, scaled proportionally.
     bounds = [round((phase.week_end + 1) * new_weeks / old_weeks) for phase in phases]
 
-    # 前向：至少一週，且嚴格遞增。
+    # Forward pass: at least one week each, strictly increasing.
     previous = 0
     for index in range(count):
         bounds[index] = max(bounds[index], previous + 1)
         previous = bounds[index]
 
-    # 後向：最後一個必須剛好蓋滿全期，前面的往回壓，仍保證每個至少一週。
+    # Backward pass: the last phase must land exactly on the end; push the earlier ones
+    # back, still keeping at least one week each.
     bounds[-1] = new_weeks
     for index in range(count - 2, -1, -1):
         bounds[index] = min(bounds[index], bounds[index + 1] - 1)
@@ -162,7 +164,7 @@ def _rescale_phases(phases: list[Phase], old_weeks: int, new_weeks: int) -> list
 
 
 def _apply_pacing(items: list[WeeklyItem], pacing: Pacing) -> list[WeeklyItem]:
-    """把每項時長夾進 ``session_minutes``，再把 session 總次數夾進上下限。"""
+    """Clamp each duration into ``session_minutes``, then the session count into its bounds."""
     minutes_min, minutes_max = pacing.session_minutes
     working = [
         item.model_copy(
@@ -181,14 +183,14 @@ def _apply_pacing(items: list[WeeklyItem], pacing: Pacing) -> list[WeeklyItem]:
     if not sessions:
         return working
 
-    # 週內排程日數不得超過 7 - rest_days_min（Scheduler 會再驗一次）。
+    # Days scheduled per week cannot exceed 7 - rest_days_min (the scheduler re-checks).
     weekly_min, weekly_max = pacing.sessions_per_week
     weekly_max = min(weekly_max, _DAYS_PER_WEEK - pacing.rest_days_min)
     weekly_min = min(weekly_min, weekly_max)
 
     total = sum(working[index].times_per_week for index in sessions)
     while total > weekly_max:
-        # 從 times_per_week 最大的項目逐一減 1；單項不得低於 1。
+        # Take 1 off the item with the largest times_per_week; never drop below 1.
         candidates = [i for i in sessions if working[i].times_per_week > _MIN_TIMES_PER_WEEK]
         if not candidates:
             break
@@ -196,7 +198,7 @@ def _apply_pacing(items: list[WeeklyItem], pacing: Pacing) -> list[WeeklyItem]:
         working[target] = _bump(working[target], -1)
         total -= 1
     while total < weekly_min:
-        # 反向操作：從最小的項目逐一加 1；單項不得高於 7。
+        # The reverse: add 1 to the smallest item; never go above 7.
         candidates = [i for i in sessions if working[i].times_per_week < _MAX_TIMES_PER_WEEK]
         if not candidates:
             break

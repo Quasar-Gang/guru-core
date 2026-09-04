@@ -1,1 +1,1 @@
-"""API Service adapters 層 — 入口（FastAPI router、ARQ consumer）與出口實作。"""
+"""API service adapter layer: inbound (FastAPI routers, ARQ consumers) and outbound impls."""

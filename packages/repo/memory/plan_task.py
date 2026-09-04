@@ -1,4 +1,4 @@
-"""InMemoryPlanTaskRepo — 測試用的記憶體實作。"""
+"""InMemoryPlanTaskRepo — in-memory implementation for tests."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ TASK_STATUSES = ("pending", "done", "missed", "skipped")
 
 
 class InMemoryPlanTaskRepo:
-    """把 plan_tasks 放在 process 記憶體中的 PlanTaskRepo 實作。"""
+    """PlanTaskRepo implementation that keeps plan_tasks in process memory."""
 
     def __init__(self) -> None:
         self._tasks: dict[UUID, PlanTask] = {}
@@ -89,7 +89,10 @@ class InMemoryPlanTaskRepo:
 
 
 def _is_dirty(task: PlanTask) -> bool:
-    """尚未同步，或同步後又被改動過（plan_tasks 沒有 updated_at，以 completed_at 代表改動）。"""
+    """Never synced, or changed since the last sync.
+
+    plan_tasks has no updated_at, so completed_at stands in for the last change.
+    """
     if task.synced_at is None:
         return True
     return task.completed_at is not None and task.completed_at > task.synced_at

@@ -1,4 +1,4 @@
-"""InMemoryPlanExportRepo — 測試用的記憶體實作。"""
+"""InMemoryPlanExportRepo — in-memory implementation for tests."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from packages.repo.entities import PlanExport
 
 
 class InMemoryPlanExportRepo:
-    """把 plan_exports 放在記憶體中，以 (plan_id, target) 為唯一鍵。"""
+    """Keeps plan_exports in memory, keyed uniquely by (plan_id, target)."""
 
     def __init__(self) -> None:
         self._exports: dict[tuple[UUID, str], PlanExport] = {}

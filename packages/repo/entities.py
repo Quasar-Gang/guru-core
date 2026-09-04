@@ -1,8 +1,8 @@
-"""Repo 邊界上的資料型別 — 全部是 frozen Pydantic model。
+"""The data types on the repo boundary — all frozen Pydantic models.
 
-讀取型別（`User`、`Plan`…）與 `models.py` 的 ORM 欄位一一對應；
-寫入型別（`NewPlan`、`NewPlanTask`、`TaskStatusUpdate`、`LlmCallLog`）只帶呼叫端需要提供的欄位。
-ORM 物件不得跨出 repo 邊界。
+Read types (`User`, `Plan`, ...) mirror the ORM columns in `models.py` one for one. Write
+types (`NewPlan`, `NewPlanTask`, `TaskStatusUpdate`, `LlmCallLog`) carry only the fields a
+caller has to supply. ORM objects must never cross the repo boundary.
 """
 
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class _Entity(BaseModel):
-    """所有 repo 回傳型別的共同基底：不可變。"""
+    """Immutable base class shared by every type a repo returns."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -178,11 +178,11 @@ class PlanExport(_Entity):
     created_at: datetime
 
 
-# --- 寫入用 input model ------------------------------------------------------
+# --- Write-side input models -------------------------------------------------
 
 
 class NewPlan(_Entity):
-    """`PlanRepo.create_many` 的輸入。"""
+    """Input to `PlanRepo.create_many`."""
 
     user_id: UUID
     session_id: UUID
@@ -198,7 +198,7 @@ class NewPlan(_Entity):
 
 
 class NewPlanTask(_Entity):
-    """`PlanTaskRepo.replace_all` / `replace_from` 的輸入（`plan_id` 由方法參數帶入）。"""
+    """Input to `PlanTaskRepo.replace_all` / `replace_from`; `plan_id` is a method argument."""
 
     template_key: str
     week_index: int
@@ -219,7 +219,7 @@ class NewPlanTask(_Entity):
 
 
 class TaskStatusUpdate(_Entity):
-    """`PlanTaskRepo.bulk_set_status` 的單筆輸入。"""
+    """One entry of the input to `PlanTaskRepo.bulk_set_status`."""
 
     task_id: UUID
     status: str
@@ -228,7 +228,7 @@ class TaskStatusUpdate(_Entity):
 
 
 class LlmCallLog(_Entity):
-    """`LlmCallRepo.record` 的輸入（llm_calls 僅追加，不更新）。"""
+    """Input to `LlmCallRepo.record`; llm_calls is append-only."""
 
     prompt_name: str
     prompt_version: str = ""

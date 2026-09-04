@@ -1,4 +1,4 @@
-"""TokenIssuerPort 的 HMAC-SHA256 JWT 實作。"""
+"""HMAC-SHA256 JWT implementation of TokenIssuerPort."""
 
 from uuid import UUID
 
@@ -13,10 +13,10 @@ ALGORITHM = "HS256"
 
 
 class HmacTokenIssuer:
-    """簽發 `{sub, iat, exp}` 的 HS256 JWT。
+    """Issues HS256 JWTs with `{sub, iat, exp}` claims.
 
-    過期判斷用注入的 `clock`（而不是 pyjwt 的系統時間），這樣 `FakeClock`
-    才能在測試裡把時間推前。
+    Expiry is checked against the injected `clock` rather than pyjwt's own system time,
+    so tests can move time forward with a `FakeClock`.
     """
 
     def __init__(self, secret: str, ttl_seconds: int, clock: ClockPort) -> None:

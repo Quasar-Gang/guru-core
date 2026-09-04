@@ -13,7 +13,7 @@ class Out(BaseModel):
 
 
 class _ScriptedLLM:
-    """依序回傳預設輸出，並記錄每次收到的 context（深複本）。"""
+    """Return the canned outputs in order, recording a deep copy of every context received."""
 
     def __init__(self, outputs: list[BaseModel]) -> None:
         self._outputs = list(outputs)

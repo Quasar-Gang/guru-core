@@ -1,4 +1,4 @@
-"""InMemoryStorage — 測試用的記憶體實作。"""
+"""InMemoryStorage — in-memory implementation for tests."""
 
 from datetime import UTC, datetime
 
@@ -6,7 +6,7 @@ from packages.storage.ports import ObjectNotFound, StoredObject
 
 
 class InMemoryStorage:
-    """把物件放在 process 記憶體中的 StoragePort 實作。"""
+    """StoragePort implementation that keeps objects in process memory."""
 
     def __init__(self) -> None:
         self._objects: dict[str, tuple[bytes, str]] = {}

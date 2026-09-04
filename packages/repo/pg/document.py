@@ -1,4 +1,4 @@
-"""PgDocumentRepo — documents 表的 PostgreSQL 實作。"""
+"""PgDocumentRepo — PostgreSQL implementation of the documents table."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ def _to_entity(row: models.Document) -> Document:
 
 
 class PgDocumentRepo:
-    """DocumentRepo 的 PostgreSQL 實作，以 import_id 為唯一鍵。"""
+    """PostgreSQL DocumentRepo, keyed uniquely by import_id."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory

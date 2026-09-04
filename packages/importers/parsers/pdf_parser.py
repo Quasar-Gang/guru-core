@@ -1,4 +1,4 @@
-"""PDF parser：每頁一個 TextChunk。"""
+"""PDF parser: one TextChunk per page."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from packages.importers.ports import RawBlob
 
 
 class PdfParser:
-    """抽取每一頁的純文字，section 為 "page N"。"""
+    """Extract the plain text of each page; the section is "page N"."""
 
     def supports(self, fmt: str) -> bool:
         return fmt == "pdf"

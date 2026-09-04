@@ -1,4 +1,4 @@
-"""列出現存 tag，依 namespace 分組（供前端篩選器）。"""
+"""List the tags in use, grouped by namespace, for the front-end filters."""
 
 from packages.repo import RoleModelRepo
 from services.role_model.domain import parse_tag

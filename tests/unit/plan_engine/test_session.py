@@ -1,4 +1,4 @@
-"""Plan session 狀態機。"""
+"""Plan session state machine."""
 
 import pytest
 

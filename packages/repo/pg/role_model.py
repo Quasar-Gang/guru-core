@@ -1,4 +1,4 @@
-"""PgRoleModelRepo — role_models 表的 PostgreSQL 實作。"""
+"""PgRoleModelRepo — PostgreSQL implementation of the role_models table."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ def _to_entity(row: models.RoleModel) -> RoleModel:
 
 
 class PgRoleModelRepo:
-    """RoleModelRepo 的 PostgreSQL 實作（role_models 不屬於任何使用者）。"""
+    """PostgreSQL RoleModelRepo; role_models are global rather than per-user."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory

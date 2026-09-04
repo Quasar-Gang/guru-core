@@ -1,4 +1,4 @@
-"""InMemoryDocumentRepo — 測試用的記憶體實作。"""
+"""InMemoryDocumentRepo — in-memory implementation for tests."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from packages.repo.entities import Document
 
 
 class InMemoryDocumentRepo:
-    """把 documents 放在記憶體中，以 import_id 為唯一鍵。"""
+    """Keeps documents in memory, keyed uniquely by import_id."""
 
     def __init__(self) -> None:
         self._documents: dict[UUID, Document] = {}

@@ -1,1 +1,1 @@
-"""API Service application 層 — 一個 use case 一個檔案，檔名是動詞。"""
+"""API service application layer: one use case per file, named after the verb."""

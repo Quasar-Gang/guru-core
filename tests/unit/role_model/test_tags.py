@@ -37,7 +37,7 @@ def test_rejects_unknown_namespace():
 
 def test_rejects_bad_value_pattern():
     with pytest.raises(InvalidTag):
-        validate("domain:Fitness")  # 大寫不合法
+        validate("domain:Fitness")  # uppercase is not allowed
 
 
 def test_rejects_too_long_value():
@@ -60,7 +60,7 @@ def test_persona_requires_domain_and_goal():
 
 
 def test_trait_has_no_required_tags():
-    validate_tags(["cadence:daily"], "trait", VOCAB)  # 不 raise
+    validate_tags(["cadence:daily"], "trait", VOCAB)  # must not raise
 
 
 def test_unknown_kind_has_no_required_tags():

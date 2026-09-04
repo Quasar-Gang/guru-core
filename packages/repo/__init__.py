@@ -1,6 +1,7 @@
-"""Repo package：ORM schema、repo Protocol 與其 InMemory 實作。
+"""Repo package: the ORM schema, the repo protocols and their implementations.
 
-ORM 物件只在 `packages.repo` 內部流動；跨出邊界的一律是 `entities.py` 的 frozen Pydantic model。
+ORM objects never leave `packages.repo`; everything crossing the boundary is a frozen
+Pydantic model from `entities.py`.
 """
 
 from packages.repo.engine import build_engine, build_session_factory
@@ -108,7 +109,7 @@ __all__ = [
     "ProfileRepo",
     "RoleModelRepo",
     "UserRepo",
-    # in-memory 實作
+    # in-memory implementations
     "InMemoryCheckinRepo",
     "InMemoryDocumentRepo",
     "InMemoryFollowupRoundRepo",
@@ -123,7 +124,7 @@ __all__ = [
     "InMemoryProfileRepo",
     "InMemoryRoleModelRepo",
     "InMemoryUserRepo",
-    # postgres 實作
+    # postgres implementations
     "PgCheckinRepo",
     "PgDocumentRepo",
     "PgFollowupRoundRepo",

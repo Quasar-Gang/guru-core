@@ -1,7 +1,8 @@
-"""每張表一個 Repo Protocol。
+"""One repo protocol per table.
 
-所有涉及使用者資料的方法都帶 `user_id: UUID`（`role_models` 與 worker 專用的
-`*_unscoped` 讀取除外）。回傳型別一律是 `entities.py` 的 frozen Pydantic model。
+Every method touching user data takes a `user_id: UUID`, the exceptions being `role_models`
+and the worker-only `*_unscoped` reads. Return types are always the frozen Pydantic models
+from `entities.py`.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""DOCX parser：累積非空段落，遇 heading 樣式切段。"""
+"""DOCX parser: collect non-empty paragraphs, starting a new chunk at every heading."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ def _is_heading(style_name: str) -> bool:
 
 
 class DocxParser:
-    """解析 .docx，heading 段落文字成為該段的 section。"""
+    """Parse .docx; the text of a heading paragraph becomes the chunk's section."""
 
     def supports(self, fmt: str) -> bool:
         return fmt == "docx"

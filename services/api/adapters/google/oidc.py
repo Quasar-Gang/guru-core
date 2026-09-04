@@ -1,4 +1,4 @@
-"""GoogleOidcPort 的實作：正式的 `GoogleOidc` 與測試用的 `FakeGoogleOidc`。"""
+"""GoogleOidcPort implementations: `GoogleOidc` for production, `FakeGoogleOidc` for tests."""
 
 import base64
 import binascii
@@ -16,12 +16,13 @@ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 
 
 def _decode_id_token_payload(id_token: str) -> dict[str, Any]:
-    """讀出 id_token 的 payload。
+    """Decode the id_token payload.
 
-    MVP 簡化：只做 base64url 解碼，**不驗簽**。這在此處是可接受的，因為
-    id_token 是我們自己用 client_secret 直接向 Google 的 token endpoint（TLS）
-    換來的，中間沒有經過使用者。上線前仍應換成用 Google 的 JWKS 驗簽 +
-    檢查 `aud` / `iss` / `exp` 的版本（`PyJWKClient` + `jwt.decode`）。
+    MVP shortcut: base64url decode only, **no signature verification**. That is acceptable
+    here because we fetch the id_token ourselves from Google's token endpoint over TLS using
+    our client_secret, so it never passes through the user. Before production this should
+    verify against Google's JWKS and check `aud` / `iss` / `exp` (`PyJWKClient` +
+    `jwt.decode`).
     """
     parts = id_token.split(".")
     if len(parts) != 3:
@@ -38,7 +39,7 @@ def _decode_id_token_payload(id_token: str) -> dict[str, Any]:
 
 
 class GoogleOidc:
-    """用授權碼向 Google 換 id_token，解出 `sub` / `email`。"""
+    """Exchanges an authorization code with Google for an id_token and reads `sub` / `email`."""
 
     def __init__(
         self,
@@ -85,7 +86,7 @@ class GoogleOidc:
 
 
 class FakeGoogleOidc:
-    """測試用：永遠回同一個身分，並記下被呼叫的參數。"""
+    """Test double: always returns the same identity and records the arguments it got."""
 
     def __init__(self, identity: GoogleIdentity | None = None) -> None:
         self.identity = identity or GoogleIdentity(google_sub="fake-sub", email="fake@example.com")

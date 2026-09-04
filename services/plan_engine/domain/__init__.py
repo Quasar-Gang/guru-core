@@ -1,4 +1,4 @@
-"""Plan Engine domain：計畫模板型別與 session 狀態機。"""
+"""Plan Engine domain: plan template types and the session state machine."""
 
 from services.plan_engine.domain.capacity import BusyBlock, Capacity, TimeWindow
 from services.plan_engine.domain.difficulty import (

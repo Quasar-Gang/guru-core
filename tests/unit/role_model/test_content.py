@@ -11,9 +11,9 @@ from services.role_model.domain import (
     parse_content,
 )
 
-# PRD 14.2 — T2 穩扎穩打型
+# PRD 14.2 — T2 steady-progress trait
 PRD_T2_EXAMPLE = {
-    "summary": "固定節奏、線性漸進，寧可慢一點也要每週都動。",
+    "summary": "Fixed cadence, linear progression: go slower if needed, but move every week.",
     "pacing": {
         "sessions_per_week": [4, 5],
         "session_minutes": [30, 60],
@@ -27,55 +27,64 @@ PRD_T2_EXAMPLE = {
         "sources": [],
         "confidence": "medium",
         "author": "guru team",
-        "notes": "團隊定義的執行風格，非特定人物",
+        "notes": "an execution style defined by the team, not a specific person",
     },
 }
 
-# PRD 14.2 — P2 Eliud Kipchoge 型
+# PRD 14.2 — P2 Eliud Kipchoge persona
 PRD_P2_EXAMPLE = {
-    "summary": "八成訓練量放在輕鬆配速，靠週期化與每週一次長距離累積耐力。",
+    "summary": "Eighty percent easy running, with periodization and one weekly long run.",
     "sections": {
         "principles": [
-            "八成的訓練量以能邊跑邊講話的輕鬆配速進行。",
-            "每週只安排一到兩次高強度課表，其餘全是輕鬆跑。",
-            "訓練量以週為單位漸進，每次增量不超過前一週的一成。",
-            "恢復與睡眠視為訓練的一部分，不是有空才做。",
+            "Run 80% of your volume at a conversational easy pace.",
+            "Schedule only one or two hard sessions a week; everything else is easy.",
+            "Progress volume week by week, adding no more than 10% over the previous week.",
+            "Treat recovery and sleep as part of training, not as an afterthought.",
         ],
         "weekly_structure": (
-            "一週五次：三次輕鬆跑（30–50 分）、一次強度課（間歇或節奏跑）、"
-            "一次長距離慢跑（週末，時間逐週延長）。其餘兩天完全休息或輕度伸展。"
+            "Five sessions a week: three easy runs (30-50 min), one hard session "
+            "(intervals or tempo), and one long slow run on the weekend that gets "
+            "longer each week. The other two days are full rest or light stretching."
         ),
         "progress_metrics": [
-            "同一配速下的心率逐週下降",
-            "長距離跑的持續時間逐週增加",
-            "每四週一次固定距離計時，比較完成時間",
+            "Heart rate at the same pace drops week over week",
+            "Long-run duration increases week over week",
+            "A timed run over a fixed distance every four weeks, compared against the last one",
         ],
         "pitfalls": [
-            "輕鬆跑跑太快，導致沒有真正的恢復日",
-            "週跑量增加過快造成脛骨或膝蓋疼痛",
-            "只練長距離、忽略強度課，配速停滯",
+            "Running easy days too fast, so no day is a real recovery day",
+            "Ramping weekly mileage too quickly and triggering shin or knee pain",
+            "Only running long, skipping hard sessions, and stalling out on pace",
         ],
         "applicability": {
-            "good_for": ["想首馬完賽者", "想突破 5K/10K 個人紀錄者", "每週能跑四次以上者"],
-            "not_for": ["有未癒合下肢傷勢者", "每週只能運動兩次者", "主要目標是增肌者"],
+            "good_for": [
+                "first-time marathoners",
+                "runners chasing a 5K/10K personal best",
+                "runners who can train four or more times a week",
+            ],
+            "not_for": [
+                "runners with an unhealed lower-body injury",
+                "people who can only train twice a week",
+                "people whose main goal is building muscle",
+            ],
         },
         "example_milestones": [
-            "第 4 週：能連續慢跑 45 分鐘不停",
-            "第 8 週：完成一次 12 公里長距離",
-            "第 12 週：5 公里計時較起始成績進步 8% 以上",
+            "Week 4: run 45 minutes continuously without stopping",
+            "Week 8: complete a 12 km long run",
+            "Week 12: improve the 5 km time trial by at least 8% over the baseline",
         ],
     },
     "provenance": {
         "sources": [
             {
-                "title": "公開報導與訪談整理的耐力訓練原則",
+                "title": "Endurance training principles drawn from public reporting and interviews",
                 "url": "https://example.com/placeholder",
                 "accessed_at": "2026-09-05",
             }
         ],
         "confidence": "medium",
         "author": "guru team",
-        "notes": "取公開可查證的訓練原則，不含個人生平與未公開細節",
+        "notes": "publicly verifiable training principles only; no biography or private details",
     },
 }
 
@@ -135,7 +144,7 @@ def test_parse_content_accepts_prd_trait_example():
 
 
 def test_parse_content_accepts_prd_example():
-    c = parse_content("persona", PRD_P2_EXAMPLE)  # PRD 14.2 的 Kipchoge 範例
+    c = parse_content("persona", PRD_P2_EXAMPLE)  # the Kipchoge example from PRD 14.2
     assert isinstance(c, PersonaContent)
     assert c.sections.principles and c.sections.applicability.good_for
     assert len(c.sections.pitfalls) == 3

@@ -1,7 +1,8 @@
-"""建立或更新一筆 role model（團隊寫入端點，PRD 12.7）。
+"""Create or update a role model (the team-facing write endpoint, PRD 12.7).
 
-寫入前先驗證 tag 命名空間（12.3）與 content schema（12.4），任一失敗即拒絕；
-成功後把新出現的 tag 值追加回 `config/tag_vocab.yaml`，供前端篩選與寫入提示。
+Tag namespaces (12.3) and the content schema (12.4) are validated before the write and any
+failure rejects it. On success, tag values seen for the first time are appended back to
+`config/tag_vocab.yaml` so they show up in front-end filters and authoring hints.
 """
 
 import fcntl
@@ -59,7 +60,9 @@ class UpsertRoleModel:
         return RoleModelView.of(role_model)
 
     def _learn(self, tags: list[str], vocab: TagVocab) -> None:
-        """把新值寫回 vocab 檔：flock 序列化 + 暫存檔 + os.replace 原子替換。"""
+        """Persist new values to the vocab file: serialized by flock, swapped in atomically via
+        a temp file and os.replace.
+        """
         if learn_values(tags, vocab).known_values == vocab.known_values:
             return
         path = self._tag_vocab_path
@@ -67,7 +70,8 @@ class UpsertRoleModel:
         with open(lock_path, "w", encoding="utf-8") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
             try:
-                # 取得鎖後重讀，避免覆蓋其他 process 在等待期間學到的值。
+                # Re-read under the lock so we do not clobber values another process learned
+                # while we were waiting.
                 fresh = learn_values(tags, load_tag_vocab(path))
                 _atomic_write_yaml(path, fresh.model_dump(mode="json"))
             finally:

@@ -1,4 +1,4 @@
-"""PgUserRepo — users 表的 PostgreSQL 實作。"""
+"""PgUserRepo — PostgreSQL implementation of the users table."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ def _to_entity(row: models.User) -> User:
 
 
 class PgUserRepo:
-    """UserRepo 的 PostgreSQL 實作。"""
+    """PostgreSQL UserRepo."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory

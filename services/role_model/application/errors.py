@@ -1,21 +1,21 @@
-"""Role Model Service 的應用層錯誤。
+"""Application-layer errors for the Role Model Service.
 
-刻意不與其他 service 共用：service 之間不得互相 import，因此每個 service
-自己定義同名概念，由 adapter 對應成 HTTP 狀態碼。
+Deliberately not shared with other services: services must not import each other, so each
+one defines its own copy of these concepts and its adapter maps them to HTTP status codes.
 """
 
 
 class RoleModelError(Exception):
-    """Role Model Service 應用層錯誤的基底。"""
+    """Base class for Role Model Service application errors."""
 
 
 class NotFound(RoleModelError):
-    """指定的 role model 不存在。"""
+    """The requested role model does not exist."""
 
 
 class InvalidInput(RoleModelError):
-    """tag 或 content 不合法（PRD 12.3 / 12.4）。"""
+    """The tags or the content payload are invalid (PRD 12.3 / 12.4)."""
 
 
 class Unauthorized(RoleModelError):
-    """缺少或錯誤的 X-API-Key。"""
+    """The X-API-Key header is missing or wrong."""

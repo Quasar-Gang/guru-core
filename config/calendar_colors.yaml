@@ -1,4 +1,4 @@
-# Google Calendar colorId 對應（PRD 4.3.4）。同類任務同色。
+# Google Calendar colorId mapping (PRD 4.3.4). Tasks of the same kind share a color.
 default: "8"
 by_task_type:
   session: "9"

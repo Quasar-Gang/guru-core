@@ -1,4 +1,4 @@
-"""PgFollowupRoundRepo — followup_rounds 表的 PostgreSQL 實作。"""
+"""PgFollowupRoundRepo — PostgreSQL implementation of the followup_rounds table."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def _to_entity(row: models.FollowupRound) -> FollowupRound:
 
 
 class PgFollowupRoundRepo:
-    """FollowupRoundRepo 的 PostgreSQL 實作。"""
+    """PostgreSQL FollowupRoundRepo."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory

@@ -1,9 +1,9 @@
-"""Plan Engine domain 的錯誤型別。"""
+"""Error types for the Plan Engine domain."""
 
 
 class PlanEngineDomainError(ValueError):
-    """Plan Engine domain 錯誤的基底。"""
+    """Base class for every Plan Engine domain error."""
 
 
 class IllegalTransition(PlanEngineDomainError):
-    """session 狀態機不允許的轉移。"""
+    """A transition the session state machine does not allow."""

@@ -1,4 +1,4 @@
-"""Document — Plan Engine 唯一認識的匯入格式。"""
+"""Document — the only import format the Plan Engine understands."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 
 class DocEvent(BaseModel):
-    """一筆有明確時間的事件。"""
+    """An event with an explicit time range."""
 
     title: str
     start_at: datetime
@@ -19,7 +19,7 @@ class DocEvent(BaseModel):
 
 
 class TextChunk(BaseModel):
-    """一段沒有時間資訊的文字。"""
+    """A block of text carrying no time information."""
 
     text: str
     section: str | None = None
@@ -27,15 +27,15 @@ class TextChunk(BaseModel):
 
 
 class Document(BaseModel):
-    """一份或多份匯入來源解析後的統一結果。"""
+    """The unified result of parsing one or more import sources."""
 
     events: list[DocEvent] = Field(default_factory=list)
     text_chunks: list[TextChunk] = Field(default_factory=list)
 
     def merge(self, other: Document) -> Document:
-        """回傳合併後的新 Document，不修改 self 與 other。
+        """Return a new merged Document, leaving both self and other untouched.
 
-        `other` 的 text_chunks 會重新編號，接續 self 的最大 order + 1。
+        The text chunks of `other` are renumbered to continue from self's highest order.
         """
         offset = max((c.order for c in self.text_chunks), default=-1) + 1
         return Document(

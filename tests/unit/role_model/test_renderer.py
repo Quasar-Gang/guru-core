@@ -7,9 +7,9 @@ from services.role_model.domain import (
     estimate_tokens,
 )
 
-# PRD 14.2 — T2 穩扎穩打型
+# PRD 14.2 — T2 steady-progress trait
 T2_CONTENT = {
-    "summary": "固定節奏、線性漸進，寧可慢一點也要每週都動。",
+    "summary": "Fixed cadence, linear progression: go slower if needed, but move every week.",
     "pacing": {
         "sessions_per_week": [4, 5],
         "session_minutes": [30, 60],
@@ -23,11 +23,11 @@ T2_CONTENT = {
         "sources": [],
         "confidence": "medium",
         "author": "guru team",
-        "notes": "團隊定義的執行風格，非特定人物",
+        "notes": "an execution style defined by the team, not a specific person",
     },
 }
 
-# PRD 14.2 — P2 Eliud Kipchoge 型
+# PRD 14.2 — P2 Eliud Kipchoge persona
 P2_CONTENT = {
     "summary": "八成訓練量放在輕鬆配速，靠週期化與每週一次長距離累積耐力。",
     "sections": {
@@ -65,7 +65,7 @@ P2_CONTENT = {
         "sources": [],
         "confidence": "medium",
         "author": "guru team",
-        "notes": "取公開可查證的訓練原則，不含個人生平與未公開細節",
+        "notes": "publicly verifiable training principles only; no biography or private details",
     },
 }
 
@@ -76,7 +76,9 @@ def test_estimate_tokens_is_half_the_character_count():
 
 
 def test_generate_purpose_renders_full_pacing_sentence():
-    out = RoleModelRenderer().to_context("trait", "穩扎穩打型", T2_CONTENT, Purpose.generate, 600)
+    out = RoleModelRenderer().to_context(
+        "trait", "steady progress", T2_CONTENT, Purpose.generate, 600
+    )
 
     assert out.strip().endswith(
         "節奏約束：每週 4–5 次，每次 30–60 分鐘，至少休息 1 天；"

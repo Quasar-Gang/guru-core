@@ -1,4 +1,4 @@
-"""InMemoryPlanRevisionRepo — 測試用的記憶體實作。"""
+"""InMemoryPlanRevisionRepo — in-memory implementation for tests."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ OPEN_STATUSES = ("pending", "proposed")
 
 
 class InMemoryPlanRevisionRepo:
-    """把 plan_revisions 放在 process 記憶體中的 PlanRevisionRepo 實作。"""
+    """PlanRevisionRepo implementation that keeps plan_revisions in process memory."""
 
     def __init__(self) -> None:
         self._revisions: dict[UUID, PlanRevision] = {}

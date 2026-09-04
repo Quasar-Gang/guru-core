@@ -1,0 +1,76 @@
+# Isolated stack for end-to-end verification. Day-to-day development uses the
+# PostgreSQL and Redis already running on 5432 / 6379, so these publish on
+# 5433 / 6380 to avoid a collision.
+name: guru-core
+
+x-app: &app
+  build: .
+  environment: &app-env
+    DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/guru_core
+    REDIS_URL: redis://redis:6379/0
+    STORAGE_BACKEND: local
+    STORAGE_LOCAL_ROOT: /data/storage
+    STORAGE_PUBLIC_BASE_URL: http://127.0.0.1:8000/v1/files
+    STORAGE_SIGNING_SECRET: compose-storage-secret
+    JWT_SECRET: compose-jwt-secret
+    ROLE_MODEL_API_KEY: compose-role-model-key
+    ROLE_MODEL_BASE_URL: http://role-model:8001
+    LLM_ADAPTER: fake
+  volumes:
+    - storage:/data/storage
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: guru_core
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d guru_core"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  api:
+    <<: *app
+    command: ["cmd.api_server"]
+    ports:
+      - "8000:8000"
+
+  api-worker:
+    <<: *app
+    command: ["cmd.api_worker"]
+
+  engine:
+    <<: *app
+    command: ["cmd.plan_engine_worker"]
+
+  role-model:
+    <<: *app
+    command: ["cmd.role_model_server"]
+    ports:
+      - "8001:8001"
+
+volumes:
+  pgdata:
+  storage:

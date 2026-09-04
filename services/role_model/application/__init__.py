@@ -1,4 +1,4 @@
-"""Role Model Service 應用層：CRUD 與查詢 use case。"""
+"""Role Model Service application layer: the CRUD and query use cases."""
 
 from services.role_model.application.deactivate_role_model import DeactivateRoleModel
 from services.role_model.application.errors import (

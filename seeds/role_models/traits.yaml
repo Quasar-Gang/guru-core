@@ -1,5 +1,5 @@
-# 基本特質類 seed（PRD 14.2 T1–T3）。pacing 數值逐格照 PRD 的對照表。
-# 這只是起始樣本，後續由團隊透過 POST /role-models 維護。
+# Trait seeds (PRD 14.2, T1-T3). Pacing values match the PRD table cell for cell.
+# A starting sample only; the team maintains these through POST /role-models.
 role_models:
   - kind: trait
     name: 輕鬆寫意型

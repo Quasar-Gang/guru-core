@@ -1,4 +1,4 @@
-"""InMemoryOAuthConnectionRepo — 測試用的記憶體實作。"""
+"""InMemoryOAuthConnectionRepo — in-memory implementation for tests."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from packages.repo.entities import OAuthConnection
 
 
 class InMemoryOAuthConnectionRepo:
-    """把 oauth_connections 放在記憶體中，以 (user_id, provider) 為唯一鍵。"""
+    """Keeps oauth_connections in memory, keyed uniquely by (user_id, provider)."""
 
     def __init__(self) -> None:
         self._connections: dict[tuple[UUID, str], OAuthConnection] = {}

@@ -1,4 +1,4 @@
-"""Role Model Service CRUD — application 與 HTTP 兩層（Task 27 Step 1）。"""
+"""Role Model Service CRUD across the application and HTTP layers (Task 27 Step 1)."""
 
 import shutil
 from collections.abc import AsyncIterator
@@ -16,17 +16,17 @@ from services.role_model.container import RoleModelContainer, build_test_contain
 API_KEY = "test-key"
 
 PERSONA_CONTENT: dict[str, Any] = {
-    "summary": "八成訓練量放在輕鬆配速，靠週期化累積耐力。",
+    "summary": "Eighty percent easy running, building endurance through periodization.",
     "sections": {
-        "principles": ["八成的訓練量以輕鬆配速進行。"],
-        "weekly_structure": "一週五次：三次輕鬆跑、一次強度課、一次長距離。",
-        "progress_metrics": ["同配速心率逐週下降"],
-        "pitfalls": ["輕鬆跑跑太快"],
+        "principles": ["Run 80% of your volume at an easy pace."],
+        "weekly_structure": "Five sessions a week: three easy runs, one hard, one long run.",
+        "progress_metrics": ["Heart rate at the same pace drops week over week"],
+        "pitfalls": ["Running the easy days too fast"],
     },
 }
 
 TRAIT_CONTENT: dict[str, Any] = {
-    "summary": "固定節奏、線性漸進。",
+    "summary": "Fixed cadence, linear progression.",
     "pacing": {
         "sessions_per_week": [4, 5],
         "session_minutes": [30, 60],
@@ -41,7 +41,7 @@ TRAIT_CONTENT: dict[str, Any] = {
 
 @pytest.fixture
 def tag_vocab_path(tmp_path: Path) -> Path:
-    """真實 vocab 的副本；測試一律只寫 tmp_path。"""
+    """A copy of the real vocab file; tests only ever write inside tmp_path."""
     target = tmp_path / "tag_vocab.yaml"
     shutil.copyfile(CONFIG_DIR / "tag_vocab.yaml", target)
     return target
@@ -77,20 +77,18 @@ async def _create(client: AsyncClient, body: dict[str, Any]) -> dict[str, Any]:
     return created
 
 
-# --- 建立後可 GET -----------------------------------------------------------
+# --- create then read -------------------------------------------------------
 
 
 async def test_create_persona_then_get(client: AsyncClient) -> None:
-    created = await _create(
-        client, _persona_body("Kipchoge 型", ["domain:fitness", "goal:endurance"])
-    )
+    created = await _create(client, _persona_body("Kipchoge", ["domain:fitness", "goal:endurance"]))
     assert created["kind"] == "persona"
     assert created["active"] is True
     assert created["version"] == 1
 
     got = await client.get(f"/role-models/{created['id']}")
     assert got.status_code == 200
-    assert got.json()["name"] == "Kipchoge 型"
+    assert got.json()["name"] == "Kipchoge"
     assert got.json()["content"]["summary"] == PERSONA_CONTENT["summary"]
 
 
@@ -101,22 +99,22 @@ async def test_get_unknown_id_returns_404(client: AsyncClient) -> None:
 
 
 async def test_put_updates_and_bumps_version(client: AsyncClient) -> None:
-    created = await _create(client, _persona_body("原名", ["domain:fitness", "goal:endurance"]))
-    body = _persona_body("新名", ["domain:fitness", "goal:endurance"])
+    created = await _create(client, _persona_body("old name", ["domain:fitness", "goal:endurance"]))
+    body = _persona_body("new name", ["domain:fitness", "goal:endurance"])
     resp = await client.put(
         f"/role-models/{created['id']}", json=body, headers={"X-API-Key": API_KEY}
     )
     assert resp.status_code == 200
-    assert resp.json()["name"] == "新名"
+    assert resp.json()["name"] == "new name"
     assert resp.json()["version"] == 2
     assert resp.json()["id"] == created["id"]
 
 
-# --- 驗證 -------------------------------------------------------------------
+# --- validation -------------------------------------------------------------
 
 
 async def test_invalid_tag_returns_422(client: AsyncClient) -> None:
-    body = _persona_body("壞 tag", ["domain:fitness", "goal:endurance", "nope:bad"])
+    body = _persona_body("bad tag", ["domain:fitness", "goal:endurance", "nope:bad"])
     resp = await client.post("/role-models", json=body, headers={"X-API-Key": API_KEY})
     assert resp.status_code == 422
     assert resp.json()["error"]["code"] == "invalid_input"
@@ -126,14 +124,14 @@ async def test_invalid_tag_returns_422(client: AsyncClient) -> None:
 async def test_persona_missing_required_namespace_returns_422(client: AsyncClient) -> None:
     resp = await client.post(
         "/role-models",
-        json=_persona_body("缺 goal", ["domain:fitness"]),
+        json=_persona_body("missing goal", ["domain:fitness"]),
         headers={"X-API-Key": API_KEY},
     )
     assert resp.status_code == 422
 
 
 async def test_invalid_content_returns_422(client: AsyncClient) -> None:
-    body = _persona_body("壞 content", ["domain:fitness", "goal:endurance"])
+    body = _persona_body("bad content", ["domain:fitness", "goal:endurance"])
     body["content"] = {"summary": "x", "sections": {"unknown_field": 1}}
     resp = await client.post("/role-models", json=body, headers={"X-API-Key": API_KEY})
     assert resp.status_code == 422
@@ -159,8 +157,10 @@ async def test_post_with_wrong_api_key_returns_401(client: AsyncClient) -> None:
 
 
 async def test_put_and_delete_require_api_key(client: AsyncClient) -> None:
-    created = await _create(client, _persona_body("受保護", ["domain:fitness", "goal:endurance"]))
-    body = _persona_body("受保護", ["domain:fitness", "goal:endurance"])
+    created = await _create(
+        client, _persona_body("protected", ["domain:fitness", "goal:endurance"])
+    )
+    body = _persona_body("protected", ["domain:fitness", "goal:endurance"])
     assert (await client.put(f"/role-models/{created['id']}", json=body)).status_code == 401
     assert (await client.delete(f"/role-models/{created['id']}")).status_code == 401
 
@@ -170,23 +170,23 @@ async def test_get_endpoints_need_no_api_key(client: AsyncClient) -> None:
     assert (await client.get("/role-models/tags")).status_code == 200
 
 
-# --- 列表查詢 ---------------------------------------------------------------
+# --- list queries -----------------------------------------------------------
 
 
 async def test_list_filters_by_kind(client: AsyncClient) -> None:
-    await _create(client, _trait_body("穩扎穩打", ["cadence:5x-week"]))
+    await _create(client, _trait_body("steady progress", ["cadence:5x-week"]))
     await _create(client, _persona_body("Kipchoge", ["domain:fitness", "goal:endurance"]))
 
     resp = await client.get("/role-models", params={"kind": "trait"})
     assert resp.status_code == 200
     items = resp.json()
-    assert [i["name"] for i in items] == ["穩扎穩打"]
+    assert [i["name"] for i in items] == ["steady progress"]
     assert items[0]["summary"] == TRAIT_CONTENT["summary"]
 
 
 async def test_list_match_all_requires_every_tag(client: AsyncClient) -> None:
-    await _create(client, _persona_body("兩個都有", ["domain:fitness", "goal:endurance"]))
-    await _create(client, _persona_body("只有一個", ["domain:fitness", "goal:fat-loss"]))
+    await _create(client, _persona_body("both tags", ["domain:fitness", "goal:endurance"]))
+    await _create(client, _persona_body("one tag only", ["domain:fitness", "goal:fat-loss"]))
 
     params: list[tuple[str, str | int | float | bool | None]] = [
         ("tags", "domain:fitness"),
@@ -194,7 +194,7 @@ async def test_list_match_all_requires_every_tag(client: AsyncClient) -> None:
         ("match", "all"),
     ]
     resp = await client.get("/role-models", params=params)
-    assert [i["name"] for i in resp.json()] == ["兩個都有"]
+    assert [i["name"] for i in resp.json()] == ["both tags"]
 
     any_params: list[tuple[str, str | int | float | bool | None]] = [
         ("tags", "domain:fitness"),
@@ -202,14 +202,14 @@ async def test_list_match_all_requires_every_tag(client: AsyncClient) -> None:
         ("match", "any"),
     ]
     any_resp = await client.get("/role-models", params=any_params)
-    assert {i["name"] for i in any_resp.json()} == {"兩個都有", "只有一個"}
+    assert {i["name"] for i in any_resp.json()} == {"both tags", "one tag only"}
 
 
 async def test_summary_defaults_to_empty_string(container: RoleModelContainer) -> None:
     await container.role_models.upsert(
         role_model_id=None,
         kind="persona",
-        name="無 summary",
+        name="no summary",
         tags=["domain:fitness", "goal:endurance"],
         content={},
     )
@@ -217,11 +217,13 @@ async def test_summary_defaults_to_empty_string(container: RoleModelContainer) -
     assert [i.summary for i in items] == [""]
 
 
-# --- 停用 -------------------------------------------------------------------
+# --- deactivation -----------------------------------------------------------
 
 
 async def test_delete_deactivates_and_hides_from_default_list(client: AsyncClient) -> None:
-    created = await _create(client, _persona_body("要停用的", ["domain:fitness", "goal:endurance"]))
+    created = await _create(
+        client, _persona_body("to be deactivated", ["domain:fitness", "goal:endurance"])
+    )
     resp = await client.delete(f"/role-models/{created['id']}", headers={"X-API-Key": API_KEY})
     assert resp.status_code == 204
 
@@ -252,13 +254,13 @@ async def test_list_tags_groups_by_namespace(client: AsyncClient) -> None:
     }
 
 
-# --- tag vocab 寫回 ---------------------------------------------------------
+# --- tag vocab write-back ---------------------------------------------------
 
 
 async def test_upsert_learns_new_values_into_vocab_file(
     client: AsyncClient, tag_vocab_path: Path
 ) -> None:
-    await _create(client, _persona_body("新領域", ["domain:cooking", "goal:endurance"]))
+    await _create(client, _persona_body("new domain", ["domain:cooking", "goal:endurance"]))
     vocab = yaml.safe_load(tag_vocab_path.read_text(encoding="utf-8"))
     assert "cooking" in vocab["known_values"]["domain"]
 
@@ -269,7 +271,7 @@ async def test_rejected_upsert_does_not_touch_vocab_file(
     before = tag_vocab_path.read_text(encoding="utf-8")
     await client.post(
         "/role-models",
-        json=_persona_body("壞的", ["nope:bad"]),
+        json=_persona_body("rejected", ["nope:bad"]),
         headers={"X-API-Key": API_KEY},
     )
     assert tag_vocab_path.read_text(encoding="utf-8") == before

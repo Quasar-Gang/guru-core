@@ -1,4 +1,4 @@
-"""OpenAICompatLLM：以 httpx.MockTransport 驗證請求組裝、解析與錯誤映射。"""
+"""OpenAICompatLLM: request assembly, parsing and error mapping, driven by httpx.MockTransport."""
 
 import json
 from pathlib import Path

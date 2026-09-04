@@ -2,7 +2,7 @@ from typing import Protocol
 
 
 class CachePort(Protocol):
-    """鍵值快取。值一律是字串，過期由 TTL 控制。"""
+    """Key-value cache. Values are always strings; expiry is driven by TTL."""
 
     async def get(self, key: str) -> str | None: ...
 
@@ -11,5 +11,8 @@ class CachePort(Protocol):
     async def delete(self, key: str) -> None: ...
 
     async def incr(self, key: str, ttl_seconds: int | None = None) -> int:
-        """加一並回傳新值；key 不存在時從 1 開始。ttl 只在建立 key 時套用。"""
+        """Increment by one and return the new value, starting at 1 for a missing key.
+
+        `ttl_seconds` is applied only when the key is created.
+        """
         ...

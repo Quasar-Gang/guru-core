@@ -1,4 +1,4 @@
-"""CSV parser：有時間欄位的列進 events，其餘整列進 text_chunks。"""
+"""CSV parser: rows with a time column become events, all other rows become text chunks."""
 
 from __future__ import annotations
 
@@ -10,6 +10,8 @@ from datetime import UTC, datetime
 from packages.importers.document import DocEvent, Document, TextChunk
 from packages.importers.ports import RawBlob
 
+# Header keywords are matched in both English and Chinese: spreadsheets exported by users
+# routinely use localized column names, so the values below are behaviour, not prose.
 _START_KEYWORDS = ("start", "開始", "date", "日期")
 _END_KEYWORDS = ("end", "結束")
 
@@ -17,7 +19,7 @@ _DATE_FORMATS = ("%Y/%m/%d %H:%M", "%Y/%m/%d", "%Y%m%d")
 
 
 def is_time_header(header: str) -> bool:
-    """表頭是否代表時間欄位（開始或結束）。"""
+    """Return True when the header names a time column (start or end)."""
     lowered = header.strip().lower()
     return any(keyword in lowered for keyword in (*_START_KEYWORDS, *_END_KEYWORDS))
 
@@ -33,7 +35,7 @@ def _is_end_header(header: str) -> bool:
 
 
 def parse_datetime(value: object) -> datetime | None:
-    """把儲存格內容轉成 UTC aware datetime；轉不出來回 None。"""
+    """Convert a cell value to a UTC-aware datetime, or None when it is not a date."""
     if isinstance(value, datetime):
         return _as_utc(value)
     if not isinstance(value, str):
@@ -58,7 +60,7 @@ def _as_utc(value: datetime) -> datetime:
 
 
 def rows_to_document(headers: Sequence[str], rows: Sequence[Sequence[object]]) -> Document:
-    """把表頭 + 資料列轉成 Document（CSV 與 XLSX 共用）。"""
+    """Turn a header row plus data rows into a Document; shared by the CSV and XLSX parsers."""
     events: list[DocEvent] = []
     chunks: list[TextChunk] = []
     for row in rows:
@@ -105,7 +107,7 @@ def _row_to_event(pairs: Sequence[tuple[str, object]]) -> DocEvent | None:
 
 
 class CsvParser:
-    """解析 CSV（UTF-8，允許 BOM）。"""
+    """Parse CSV encoded as UTF-8, with or without a BOM."""
 
     def supports(self, fmt: str) -> bool:
         return fmt == "csv"

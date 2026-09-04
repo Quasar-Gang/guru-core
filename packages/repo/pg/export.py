@@ -1,4 +1,4 @@
-"""PgPlanExportRepo — plan_exports 表的 PostgreSQL 實作。"""
+"""PgPlanExportRepo — PostgreSQL implementation of the plan_exports table."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def _to_entity(row: models.PlanExport) -> PlanExport:
 
 
 class PgPlanExportRepo:
-    """PlanExportRepo 的 PostgreSQL 實作，以 (plan_id, target) 為唯一鍵。"""
+    """PostgreSQL PlanExportRepo, keyed uniquely by (plan_id, target)."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory

@@ -1,4 +1,4 @@
-"""InMemoryLlmCallRepo — 測試用的記憶體實作。"""
+"""InMemoryLlmCallRepo — in-memory implementation for tests."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from packages.repo.entities import LlmCallLog
 
 
 class InMemoryLlmCallRepo:
-    """把 llm_calls 累積在記憶體 list 中（僅追加）。"""
+    """Accumulates llm_calls in an in-memory list; append-only."""
 
     def __init__(self) -> None:
         self.records: list[LlmCallLog] = []

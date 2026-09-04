@@ -1,4 +1,4 @@
-"""PlanTemplate schema 與 phases 覆蓋驗證。"""
+"""PlanTemplate schema and phase-coverage validation."""
 
 from typing import Any
 
@@ -28,25 +28,25 @@ def _phase(index: int, week_start: int, week_end: int) -> Phase:
 def _weekly_item(**overrides: Any) -> WeeklyItem:
     kwargs: dict[str, Any] = {
         "key": "long_run",
-        "title": "長距離慢跑",
+        "title": "long slow run",
         "task_type": "session",
         "day_hint": "sat",
         "slot_hint": "morning",
         "duration_minutes": 60,
-        "description": "慢速跑 60 分鐘",
+        "description": "easy-pace run for 60 minutes",
     }
     kwargs.update(overrides)
     return WeeklyItem(**kwargs)
 
 
 def _template(**overrides: Any) -> PlanTemplate:
-    """建立一個合法完整的 template，欄位可用 overrides 覆寫。"""
+    """Build a complete, valid template; any field can be replaced via overrides."""
     kwargs: dict[str, Any] = {
-        "title": "12 週 5K 跑進 30 分",
-        "goal_statement": "12 週內 5K 跑進 30 分鐘",
+        "title": "sub-30 5K in 12 weeks",
+        "goal_statement": "run a 5K under 30 minutes within 12 weeks",
         "duration_weeks": 8,
-        "assumptions": ["每週可跑三次"],
-        "success_criteria": ["5K 用時 ≤ 30 分"],
+        "assumptions": ["can run three times a week"],
+        "success_criteria": ["5K time <= 30 minutes"],
         "phases": [_phase(0, 0, 3), _phase(1, 4, 7)],
         "weekly_template": [_weekly_item()],
     }
@@ -117,7 +117,7 @@ def test_weekly_item_defaults() -> None:
     assert item.times_per_week == 1
     item_no_desc = WeeklyItem(
         key="rest",
-        title="休息",
+        title="rest",
         task_type="rest",
         day_hint="any",
         slot_hint="any",

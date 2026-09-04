@@ -1,4 +1,4 @@
-"""InMemoryFollowupRoundRepo — 測試用的記憶體實作。"""
+"""InMemoryFollowupRoundRepo — in-memory implementation for tests."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from packages.repo.entities import FollowupRound
 
 
 class InMemoryFollowupRoundRepo:
-    """把 followup_rounds 放在 process 記憶體中的 FollowupRoundRepo 實作。"""
+    """FollowupRoundRepo implementation that keeps followup_rounds in process memory."""
 
     def __init__(self) -> None:
         self._rounds: dict[UUID, FollowupRound] = {}

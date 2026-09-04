@@ -12,7 +12,7 @@ from services.role_model.domain import (
 
 
 def _row(
-    name: str = "候選",
+    name: str = "candidate",
     tags: list[str] | None = None,
     content: dict[str, Any] | None = None,
     row_id: UUID | None = None,
@@ -22,7 +22,7 @@ def _row(
         kind="persona",
         name=name,
         tags=tags or [],
-        content=content or {"summary": "摘要"},
+        content=content or {"summary": "a summary"},
     )
 
 
@@ -76,22 +76,27 @@ def test_limit_is_respected():
 
 def test_ties_broken_by_name():
     rows = [
-        _row(name="乙", tags=["goal:endurance"]),
-        _row(name="甲", tags=["goal:endurance"]),
-        _row(name="丙", tags=["goal:endurance"]),
+        _row(name="bravo", tags=["goal:endurance"]),
+        _row(name="alpha", tags=["goal:endurance"]),
+        _row(name="charlie", tags=["goal:endurance"]),
     ]
 
     out = score_candidates(rows, UserSignals(goals=["endurance"]))
 
-    assert [c.name for c in out] == sorted(["甲", "乙", "丙"])
+    assert [c.name for c in out] == sorted(["alpha", "bravo", "charlie"])
 
 
 def test_scored_candidate_carries_summary_and_applicability():
     row = _row(
         tags=["goal:endurance"],
         content={
-            "summary": "八成訓練量放在輕鬆配速。",
-            "sections": {"applicability": {"good_for": ["想首馬完賽者"], "not_for": ["有傷勢者"]}},
+            "summary": "Eighty percent of training volume at an easy pace.",
+            "sections": {
+                "applicability": {
+                    "good_for": ["first-time marathoners"],
+                    "not_for": ["runners carrying an injury"],
+                }
+            },
         },
     )
 
@@ -99,9 +104,9 @@ def test_scored_candidate_carries_summary_and_applicability():
 
     assert isinstance(out[0], ScoredCandidate)
     assert out[0].role_model_id == row.id
-    assert out[0].summary == "八成訓練量放在輕鬆配速。"
-    assert out[0].applicability.good_for == ["想首馬完賽者"]
-    assert out[0].applicability.not_for == ["有傷勢者"]
+    assert out[0].summary == "Eighty percent of training volume at an easy pace."
+    assert out[0].applicability.good_for == ["first-time marathoners"]
+    assert out[0].applicability.not_for == ["runners carrying an injury"]
 
 
 def test_zero_score_candidates_are_kept():

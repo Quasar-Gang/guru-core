@@ -1,4 +1,4 @@
-"""Role Model Service 的 FastAPI app 組裝與錯誤對應。"""
+"""FastAPI app assembly and error mapping for the Role Model Service."""
 
 from typing import TYPE_CHECKING
 
@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from services.role_model.adapters.http.router import build_router
 from services.role_model.application import InvalidInput, NotFound, Unauthorized
 
-if TYPE_CHECKING:  # pragma: no cover - 只為型別，避免 container ↔ adapters 迴圈 import
+if TYPE_CHECKING:  # pragma: no cover - type-only, avoids a container <-> adapters import cycle
     from services.role_model.container import RoleModelContainer
 
 _STATUS: dict[type[Exception], int] = {Unauthorized: 401, NotFound: 404, InvalidInput: 422}

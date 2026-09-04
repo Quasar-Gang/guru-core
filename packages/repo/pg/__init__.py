@@ -1,1 +1,1 @@
-"""PostgreSQL repo 實作 — 公開介面請從 `packages.repo` import。"""
+"""PostgreSQL repo implementations — import the public names from `packages.repo`."""

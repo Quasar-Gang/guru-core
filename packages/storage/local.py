@@ -1,4 +1,7 @@
-"""LocalFileStorage — 寫本機目錄的正式實作，presign 產生本地 API 的簽章 URL。"""
+"""LocalFileStorage — production implementation backed by a local directory.
+
+Presigned URLs point at the local API and carry an HMAC signature.
+"""
 
 import hashlib
 import hmac
@@ -12,9 +15,9 @@ _META_SUFFIX = ".meta"
 
 
 class LocalFileStorage:
-    """把物件寫到 `root` 底下的 StoragePort 實作。
+    """StoragePort implementation that writes objects under `root`.
 
-    content_type 存成與物件同名、加上 `.meta` 後綴的 JSON sidecar。
+    The content type is kept in a JSON sidecar next to the object, suffixed with `.meta`.
     """
 
     def __init__(self, root: Path, public_base_url: str, signing_secret: str) -> None:
@@ -23,7 +26,7 @@ class LocalFileStorage:
         self._signing_secret = signing_secret
 
     def _resolve(self, key: str) -> Path:
-        """把 key 轉成 root 底下的路徑；拒絕絕對路徑與 `..`。"""
+        """Resolve a key to a path under root, rejecting absolute paths and `..`."""
         if not key:
             raise ValueError("key must not be empty")
         candidate = Path(key)
@@ -70,7 +73,7 @@ class LocalFileStorage:
 
     @staticmethod
     def verify_signature(secret: str, op: str, key: str, exp: int, sig: str, now: datetime) -> bool:
-        """檢查簽章是否正確且尚未過期。"""
+        """Return True when the signature matches and has not expired."""
         if int(now.timestamp()) > exp:
             return False
         return hmac.compare_digest(_sign(secret, op, key, exp), sig)

@@ -1,4 +1,4 @@
-"""匯入來源（SourcePort）實作。"""
+"""SourcePort implementations."""
 
 from packages.importers.sources.memory import InMemorySource
 

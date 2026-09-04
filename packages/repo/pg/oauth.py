@@ -1,4 +1,4 @@
-"""PgOAuthConnectionRepo — oauth_connections 表的 PostgreSQL 實作。"""
+"""PgOAuthConnectionRepo — PostgreSQL implementation of the oauth_connections table."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def _to_entity(row: models.OAuthConnection) -> OAuthConnection:
 
 
 class PgOAuthConnectionRepo:
-    """OAuthConnectionRepo 的 PostgreSQL 實作，以 (user_id, provider) 為唯一鍵。"""
+    """PostgreSQL OAuthConnectionRepo, keyed uniquely by (user_id, provider)."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory

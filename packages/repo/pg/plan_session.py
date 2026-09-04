@@ -1,7 +1,7 @@
-"""PgPlanSessionRepo — plan_sessions 表的 PostgreSQL 實作。
+"""PgPlanSessionRepo — PostgreSQL implementation of the plan_sessions table.
 
-`import_ids` 在 entity 是 `list[UUID]`，在 ORM 是 JSONB 的 `list[str]`：寫入時序列化成字串、
-讀取時轉回 UUID。
+`import_ids` is a `list[UUID]` on the entity but a JSONB `list[str]` in the ORM: it is
+serialised to strings on write and parsed back to UUIDs on read.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ def _to_entity(row: models.PlanSession) -> PlanSession:
 
 
 class PgPlanSessionRepo:
-    """PlanSessionRepo 的 PostgreSQL 實作。"""
+    """PostgreSQL PlanSessionRepo."""
 
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory

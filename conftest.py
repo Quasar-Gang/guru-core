@@ -1,17 +1,17 @@
 """Shared pytest fixtures for API tests.
 
-`container` / `client` / `auth_headers` 是後續所有 API task 的測試入口：
-`container` 是全 Fake 的 `ApiContainer`，`client` 是打在同一個 container 上的
-ASGI HTTP client，`auth_headers` 是一個已存在使用者的 Bearer JWT header。
+`container` / `client` / `auth_headers` are the entry points every API test builds on:
+`container` is a fully faked `ApiContainer`, `client` is an ASGI HTTP client wired to that
+same container, and `auth_headers` is a Bearer JWT header for an already-created user.
 """
 
 import sys
 from pathlib import Path
 
-# pytest 匯入這個 conftest 時會把 repo root 插到 `sys.path[0]`，而本 repo 有一個
-# 頂層 `cmd/` package，會蓋掉標準函式庫的 `cmd`（`pdb` 需要 `cmd.Cmd`）。
-# 把 repo root 移到 sys.path 尾端：`packages` / `services` / `cmd` 仍可 import，
-# 但標準函式庫優先。這段必須在任何其他 import 之前執行。
+# Importing this conftest puts the repo root at `sys.path[0]`, and this repo has a top-level
+# `cmd/` package that would then shadow the stdlib `cmd` module (`pdb` needs `cmd.Cmd`).
+# Move the repo root to the end of sys.path: `packages` / `services` / `cmd` still import,
+# but the stdlib wins. This has to run before any other import.
 _ROOT = str(Path(__file__).resolve().parent)
 if sys.path and sys.path[0] == _ROOT:
     sys.path.pop(0)

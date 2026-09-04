@@ -31,7 +31,7 @@ async def test_default_profile_timezone_is_utc() -> None:
 
 
 async def test_overrides_are_visible_to_use_cases() -> None:
-    """被覆蓋的元件必須是 use case 實際使用的那一個。"""
+    """An overridden component must be the one the use case actually uses."""
     users = build_test_container().users
     c = build_test_container(
         users=users,

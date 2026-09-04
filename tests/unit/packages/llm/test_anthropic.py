@@ -1,4 +1,4 @@
-"""AnthropicLLM：以 tool use 強制 schema，並映射錯誤與觀測欄位。"""
+"""AnthropicLLM: schema enforced via tool use, plus error mapping and observability fields."""
 
 import json
 from pathlib import Path

@@ -1,4 +1,4 @@
-"""匯入相關的 port 介面與共用型別。"""
+"""Import-related port interfaces and shared types."""
 
 from typing import Protocol
 
@@ -8,7 +8,7 @@ from packages.importers.document import Document
 
 
 class RawBlob(BaseModel):
-    """尚未解析的原始位元組與其中繼資料。"""
+    """Unparsed raw bytes together with their metadata."""
 
     data: bytes
     content_type: str
@@ -16,17 +16,17 @@ class RawBlob(BaseModel):
 
 
 class UnsupportedFormat(ValueError):
-    """無法判斷格式，或沒有 parser 支援該格式時拋出。"""
+    """Raised when the format cannot be detected or no parser supports it."""
 
 
 class SourcePort(Protocol):
-    """取得原始資料的來源 port。"""
+    """Port for fetching raw import data."""
 
     async def fetch(self) -> RawBlob: ...
 
 
 class ParserPort(Protocol):
-    """把 RawBlob 解析成 Document 的 parser port。"""
+    """Port for parsing a RawBlob into a Document."""
 
     def supports(self, fmt: str) -> bool: ...
 

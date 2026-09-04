@@ -1,65 +1,77 @@
-# CONTRIBUTING — guru-core
+# Contributing to guru-core
 
-## 本機基礎設施
+## Local infrastructure
 
-| 項目 | 位置 | 備註 |
+| Component | Address | Notes |
 |---|---|---|
-| PostgreSQL 15 | `127.0.0.1:5432` | `postgres` / `postgres`，DB 名 `guru_core` |
-| Redis 7 | `127.0.0.1:6379` | 佇列與快取 |
-| 物件儲存 | `./.data/storage` | MVP 用 `LocalFileStorage`；`STORAGE_BACKEND=r2` 可切到 Cloudflare R2 |
-| LLM | `LLM_ADAPTER=fake` | 開發與測試預設讀 `tests/fixtures/llm/` |
+| PostgreSQL 15 | `127.0.0.1:5432` | `postgres` / `postgres`, database `guru_core` |
+| Redis 7 | `127.0.0.1:6379` | Queue and cache |
+| Object storage | `./.data/storage` | `LocalFileStorage` for the MVP; `STORAGE_BACKEND=r2` switches to Cloudflare R2 |
+| LLM | `LLM_ADAPTER=fake` | Development and tests read fixtures from `tests/fixtures/llm/` |
 
-## 常用指令
+## Commands
 
 ```bash
-uv sync                       # 安裝依賴
-make check                    # ruff → mypy --strict → import-linter → pytest（不起 Docker）
-make fmt                      # 自動排版與修正
-make integration              # 需要本機 PostgreSQL 的整合測試
-uv run alembic upgrade head   # 套用 migration
-uv run alembic check          # 確認 model 與 migration 同步
+uv sync                       # install dependencies
+make check                    # ruff -> mypy --strict -> import-linter -> pytest (no Docker)
+make fmt                      # format and autofix
+make integration              # integration tests against the local PostgreSQL
+uv run alembic upgrade head   # apply migrations
+uv run alembic check          # verify models and migrations agree
 uv run python -m cmd.api_server            # API Service HTTP (8000)
 uv run python -m cmd.api_worker            # import.parse / export.push worker
 uv run python -m cmd.plan_engine_worker    # plan.generate / continue / revise worker
 uv run python -m cmd.role_model_server     # Role Model Service HTTP (8001)
-uv run python -m cmd.seed_role_models      # 寫入 seeds/role_models/*.yaml
-uv run python -m cmd.check_llm             # 對設定的 provider 跑一次 smoke test
+uv run python -m cmd.seed_role_models      # load seeds/role_models/*.yaml
+uv run python -m cmd.check_llm             # one smoke call against the configured provider
 ```
 
-## 工程紀律
+## Language
 
-以下逐條照抄自 PRD 第 9 節，CI 會強制其中可自動檢查的部分。
+The codebase is **English-only**: identifiers, comments, docstrings, log and exception messages, test names, Markdown docs and YAML comments. The only exceptions are files that carry *content* rather than code, and they keep their original language:
 
-### 9.1 邊界（用工具強制，不靠自覺）
+- `packages/llm/prompts/*.md` — read by the LLM.
+- `config/readiness_metrics.yaml` — its text is rendered into the evaluate prompt.
+- `seeds/role_models/*.yaml` — role model content is rendered into prompts.
+- `tests/fixtures/llm/*.json` — simulated LLM output.
+- `tests/fixtures/importers/sample.*` — simulated user uploads, deliberately non-ASCII so encoding bugs surface.
+- End-user product strings whose exact format the PRD fixes: the Markdown export headings (PRD 4.3.5) and the trait pacing sentence (PRD 12.6).
+- `guru-core-PRD.md` — the source specification, never edited.
 
-1. 依賴方向只能 `adapters → application → domain`；反向 import 直接 CI 失敗（`import-linter` layers contract）。
-2. Service 之間不能互相 import。只能透過 `packages/` 或佇列溝通；`services/plan_engine` 出現 `from services.api import ...` 即違規。
-2b. `cmd/` 只能 import 各 service 的 `container.py` 與 `packages/` 的 runtime helper，不能 import use case 或 domain；`cmd/` 出現業務判斷即違規。
-3. 每個共用套件只 export `__init__.py` 中的公開介面，其餘視為 private。
-4. 一張表只有一個 service 能寫，其他只讀；owner 寫在表格 docstring（見 4.2）。
+## Engineering discipline
 
-### 9.2 抽象（所有存儲與外部都是 port，皆可替換）
+The 17 rules below come from PRD section 9. CI enforces the ones a tool can check.
 
-5. 以下一律定義 `Protocol`，實作放 adapters：`LLMPort`、`StoragePort`、`QueuePort`、`CachePort`、每張表的 `XxxRepo`、`SourcePort` / `ParserPort`、`CalendarPort` / `NotionPort`。Scheduler、`RoleModelRenderer`、難度推導係數屬於 domain 的純函式，不是 port——它們沒有外部依賴，必須可單獨測試。
-6. 每個 port 至少兩個實作：正式版 + `InMemory` / `Fake` 版。Fake 版的目的是現在的測試不用起 Docker——這是抽象有沒有做對的驗證。
-7. Port 介面只用 domain 型別，不用供應商型別。`StoragePort.put(key, bytes)` 可以，`put(boto3_object)` 不行；`LLMPort.complete()` 回 Pydantic model，不回 SDK response。
-8. 供應商切換只改組裝點：每個 service 一個 `container.py`，環境變數決定實作。其他地方看不到 `boto3`、`anthropic`、`openai`、`redis` 這些字。
+### Boundaries — enforced by tooling, not by discipline
 
-### 9.3 易讀性
+1. Dependencies may only point `adapters -> application -> domain`. A reverse import fails CI (`import-linter` layers contract).
+2. Services must not import each other. They communicate only through `packages/` or the queue; `from services.api import ...` inside `services/plan_engine` is a violation.
+2b. `cmd/` may only import each service's `container.py` and runtime helpers from `packages/`, never a use case or a domain module; any business branching inside `cmd/` is a violation.
+3. Each shared package exports only what its `__init__.py` lists in `__all__`; everything else is private.
+4. Exactly one service may write to a given table; the rest read only. The owner is recorded in the model's docstring (see PRD 4.2).
 
-9. 一個 use case 一個檔案，檔名是動詞：`evaluate_session.py`、`generate_followups.py`。
-10. Domain 狀態機用 enum + 明確轉移表，不散落 `if status == "questioning"`。
-11. 固定命名：port 叫 `XxxPort`，實作叫 `技術名 + Xxx`（`PgSessionRepo`、`R2Storage`、`OpenAICompatLLM`），use case 叫動詞。
-12. `mypy --strict` 過；Pydantic 管所有進出邊界的資料（HTTP、佇列 payload、LLM 輸出）。
-13. 每個 service 與套件根目錄一份 `README.md`，只回答三個問題：負責什麼、對外 port 有哪些、不負責什麼。
+### Abstraction — every store and every external system is a port
 
-### 9.4 變更紀律
+5. The following are always defined as a `Protocol`, with implementations under `adapters`: `LLMPort`, `StoragePort`, `QueuePort`, `CachePort`, one `XxxRepo` per table, `SourcePort` / `ParserPort`, `CalendarPort` / `NotionPort`. The scheduler, `RoleModelRenderer` and the difficulty coefficients are pure domain functions, not ports — they have no external dependency and must be testable on their own.
+6. Every port has at least two implementations: the real one plus an `InMemory` / `Fake`. The point of the fake is that today's tests need no Docker — that is how you know the abstraction is right.
+7. Port interfaces use domain types only, never vendor types. `StoragePort.put(key, bytes)` is fine, `put(boto3_object)` is not; `LLMPort.complete()` returns a Pydantic model, not an SDK response.
+8. Swapping a vendor touches only the assembly point: one `container.py` per service, with environment variables choosing the implementation. The strings `boto3`, `anthropic`, `openai` and `redis` appear nowhere else.
 
-14. 加新的外部整合 = 加一個 adapter + 改 container，不改 use case；若需改 use case，代表 port 設計錯了，先修 port。
-15. DB schema 只透過 Alembic migration 改，migration 與功能同一 PR。
-16. 佇列 payload 是版本化 Pydantic model；加欄位可以，改語意要開新版本。
-17. 任務狀態的權威來源在 PostgreSQL，Redis 只當快取；Redis 清空不能導致任何 session 或 job 消失。
+### Readability
 
-### 9.5 CI 必過清單
+9. One use case per file, named after a verb: `evaluate_session.py`, `generate_followups.py`.
+10. Domain state machines use an enum plus an explicit transition table, never `if status == "questioning"` scattered around.
+11. Fixed naming: ports are `XxxPort`, implementations are technology + role (`PgSessionRepo`, `R2Storage`, `OpenAICompatLLM`), use cases are verbs.
+12. `mypy --strict` passes. Pydantic owns every piece of data crossing a boundary (HTTP, queue payloads, LLM output).
+13. Every service and package root carries a `README.md` answering only three questions: what it owns, which ports it exposes, what it does not do.
 
-`ruff` → `mypy --strict` → `import-linter`（含 `cmd/` 那條）→ `pytest`（unit + application，皆不起 Docker）→ `alembic check`
+### Change discipline
+
+14. Adding an external integration means adding an adapter and editing a container — not editing a use case. If a use case has to change, the port was designed wrong; fix the port first.
+15. DB schema changes go through Alembic migrations only, in the same PR as the feature.
+16. Queue payloads are versioned Pydantic models. Adding a field is fine; changing a meaning needs a new version.
+17. PostgreSQL is the source of truth for job state; Redis is only a cache. Flushing Redis must never lose a session or a job.
+
+### CI must pass
+
+`ruff` -> `mypy --strict` -> `import-linter` (including the `cmd/` contract) -> `pytest` (unit + application, no Docker) -> `alembic check`

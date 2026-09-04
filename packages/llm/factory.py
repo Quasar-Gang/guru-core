@@ -1,4 +1,4 @@
-"""build_llm：依設定選出 LLMPort 實作。"""
+"""build_llm — pick the LLMPort implementation named by the configuration."""
 
 from pathlib import Path
 from typing import TYPE_CHECKING

@@ -1,4 +1,4 @@
-"""PlanTemplate 與其子型別（PRD 4.3.1）。難度不在 template 內。"""
+"""PlanTemplate and its sub-types (PRD 4.3.1). Difficulty lives outside the template."""
 
 from __future__ import annotations
 
@@ -12,14 +12,14 @@ TaskType = Literal["session", "habit", "checkpoint", "rest"]
 
 
 class Milestone(BaseModel):
-    """階段結束的檢核點，scheduler 會展開成一個 checkpoint task。"""
+    """The check at the end of a phase; the scheduler expands it into a checkpoint task."""
 
     title: str
     metric: str
 
 
 class Phase(BaseModel):
-    """計畫的一個階段，週次為相對週（從 0 起）。"""
+    """One phase of a plan. Week numbers are relative to the plan start (0-based)."""
 
     index: int
     name: str
@@ -30,7 +30,7 @@ class Phase(BaseModel):
 
 
 class WeeklyItem(BaseModel):
-    """一週骨架中的一項任務，scheduler 用它展開成每週任務。"""
+    """One item of the weekly skeleton; the scheduler expands it into per-week tasks."""
 
     key: str = Field(pattern=r"^[a-z0-9_]+$")
     title: str
@@ -43,7 +43,7 @@ class WeeklyItem(BaseModel):
 
 
 class PlanTemplate(BaseModel):
-    """LLM 產出的基準計畫模板；difficulty 由程式在外層推導。"""
+    """The baseline plan template produced by the LLM; difficulty is derived in code."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -85,6 +85,6 @@ class PlanTemplate(BaseModel):
 
 
 class PlanTemplateOutput(BaseModel):
-    """generate_plans 的 LLM output_schema wrapper。"""
+    """LLM ``output_schema`` wrapper for ``generate_plans``."""
 
     template: PlanTemplate

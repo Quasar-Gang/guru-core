@@ -1,4 +1,4 @@
-"""build_llm：依設定的 adapter 選出對應實作。"""
+"""build_llm: pick the implementation matching the configured adapter."""
 
 from pathlib import Path
 from typing import Any

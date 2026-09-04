@@ -1,27 +1,35 @@
 # packages/queue
 
-## 負責什麼
+## What it owns
 
-- 定義所有跨 service 的**佇列 payload**（`jobs.py`），一律 Pydantic v2、frozen、`extra="forbid"`，名稱帶版本後綴（`PlanGenerateJobV1`）。
-- 每個 payload 以 classmethod `queue_name()` 宣告自己所屬的佇列；`JOB_REGISTRY` 是 `queue name -> payload class` 的反查表，供 worker 還原 payload 使用。
-- 提供 `QueuePort` 的兩個實作：`ArqQueue`（ARQ on Redis，正式）與 `InMemoryQueue`（測試用，可 `drain()` 同步執行）。
-- 提供 `run_worker(redis_url, handlers)`：啟動 ARQ worker，把佇列上的原始 dict 依 `JOB_REGISTRY` 還原成 Pydantic model 後交給 handler。
+- Defines every cross-service **queue payload** (`jobs.py`). All of them are Pydantic v2, frozen and
+  `extra="forbid"`, with a version suffix in the name (`PlanGenerateJobV1`).
+- Each payload declares its own queue through the `queue_name()` classmethod; `JOB_REGISTRY` is the
+  reverse lookup from queue name to payload class, which workers use to rebuild a payload.
+- Provides two `QueuePort` implementations: `ArqQueue` (ARQ on Redis, for production) and
+  `InMemoryQueue` (for tests, with a `drain()` that runs jobs synchronously).
+- Provides `run_worker(redis_url, handlers)`: starts an ARQ worker that turns the raw dict on the
+  queue back into the Pydantic model named by `JOB_REGISTRY` before handing it to a handler.
 
-目前的五個佇列：`import.parse`、`plan.generate`、`plan.continue`、`plan.revise`、`export.push`。
+The five queues today: `import.parse`, `plan.generate`, `plan.continue`, `plan.revise`, `export.push`.
 
-## 對外 port 有哪些
+## The ports it exposes
 
-- `QueuePort`（Protocol）
+- `QueuePort` (Protocol)
   - `async enqueue(payload: JobPayload) -> JobHandle`
   - `async status(job_id: str) -> JobStatus | None`
-- 附屬型別：`JobPayload`、`JobHandle`、`JobStatus`、`JOB_REGISTRY` 及五個 `*JobV1` payload。
-- 實作：`ArqQueue(redis_url)`（另有 `close()`）、`InMemoryQueue()`（另有 `enqueued` 與 `drain(handlers)`）。
-- Runtime helper：`run_worker(redis_url, handlers)`。
+- Supporting types: `JobPayload`, `JobHandle`, `JobStatus`, `JOB_REGISTRY` and the five `*JobV1` payloads.
+- Implementations: `ArqQueue(redis_url)` (plus `close()`), `InMemoryQueue()` (plus `enqueued` and `drain(handlers)`).
+- Runtime helper: `run_worker(redis_url, handlers)`.
 
-## 不負責什麼
+## What it does not do
 
-- **不含任何業務邏輯**：job handler 由各 service 的 application 層提供並注入，這裡只負責投遞與還原。
-- **不是任務狀態的權威來源**：權威狀態在 PostgreSQL；`status()` 只是佇列側的即時觀察值，Redis 清空不得造成資料遺失。
-- 不做排程（cron）、不做重試策略設定、不做 dead-letter 管理。
-- 不碰 DB、不碰 HTTP、不決定 worker 進程如何啟動（那是 `cmd/` 的事）。
-- `arq` / `redis` 只出現在 `arq_queue.py` 與 `worker.py`；port 與 payload 完全看不到供應商型別。
+- **No business logic.** Job handlers are supplied and injected by each service's application layer;
+  this package only delivers and rebuilds payloads.
+- **It is not the source of truth for job state.** That lives in PostgreSQL; `status()` is only the
+  queue's own live view, and flushing Redis must never lose data.
+- No scheduling (cron), no retry policy configuration, no dead-letter management.
+- It does not touch the database or HTTP, and it does not decide how worker processes are launched
+  (that is `cmd/`).
+- `arq` and `redis` appear only in `arq_queue.py` and `worker.py`; no vendor type is visible from
+  the port or the payloads.

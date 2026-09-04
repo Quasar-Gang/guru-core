@@ -1,4 +1,7 @@
-"""驗證 → 回灌 → 降級鏈（PRD 7.5）：格式對不代表內容合理，兩層都要過。"""
+"""Validate, retry with feedback, then degrade (PRD 7.5).
+
+A well-formed response is not necessarily a sensible one, so both layers must pass.
+"""
 
 from collections.abc import Callable, Sequence
 from typing import Any
@@ -15,11 +18,11 @@ __all__ = [
 ]
 
 BusinessRule = Callable[[Any], list[str]]
-"""回傳違規訊息列，空 list 代表通過。"""
+"""Return the list of violation messages; an empty list means the output passed."""
 
 
 class LLMValidationExhausted(LLMError):
-    """重試耗盡且沒有 fallback 可降級。"""
+    """Retries were exhausted and no fallback was available."""
 
     def __init__(self, violations: list[str]) -> None:
         super().__init__("; ".join(violations) or "validation exhausted")
@@ -44,7 +47,11 @@ async def complete_validated(
     rules: Sequence[BusinessRule] = (),
     fallback: Callable[[list[str]], OutputT] | None = None,
 ) -> ValidationOutcome[OutputT]:
-    """呼叫 LLM 並跑業務規則；失敗就把違規訊息回灌重試，耗盡則降級或拋錯。"""
+    """Call the LLM and apply the business rules.
+
+    On failure the violations are fed back into the next attempt. Once attempts run out the
+    fallback is used if one was given, otherwise LLMValidationExhausted is raised.
+    """
     violations: list[str] = []
     previous_output: dict[str, Any] = {}
     attempts = 0

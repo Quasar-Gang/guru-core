@@ -1,4 +1,4 @@
-"""Prompt 模板註冊表：讀 `.md` 模板、拆 SYSTEM / USER 兩段、以 jinja2 渲染。"""
+"""Prompt template registry: load `.md` templates, split SYSTEM/USER, render with jinja2."""
 
 import re
 from pathlib import Path
@@ -30,7 +30,7 @@ class _Template(BaseModel):
 
 
 class PromptRegistry:
-    """從目錄載入 prompt 模板；模板內容在第一次使用時解析並快取。"""
+    """Load prompt templates from a directory, parsing and caching each on first use."""
 
     def __init__(self, directory: Path) -> None:
         self._directory = directory

@@ -1,9 +1,9 @@
-# Scheduler 的系統層規則（PRD 4.3.2）。不由 LLM 指定。
+# System-level scheduling rules (PRD 4.3.2). Never chosen by the LLM.
 default_start: next_monday      # next_monday | tomorrow
-min_gap_minutes: 30             # 兩個任務之間的最小間隔
-max_shift_days: 3               # 衝突時最多往後找幾天（不得跨出該週）
-checkpoint_hour: 0              # checkpoint 為全天任務
-slot_order:                     # slot_hint = any 時的嘗試順序
+min_gap_minutes: 30             # minimum gap between two scheduled tasks
+max_shift_days: 3               # how far a conflicting task may slide, never across the week
+checkpoint_hour: 0              # checkpoints are all-day tasks
+slot_order:                     # order tried when slot_hint is "any"
   - morning
   - evening
   - noon

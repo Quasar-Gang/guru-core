@@ -1,4 +1,4 @@
-"""InMemory repo 的 round-trip 與跨使用者/跨計畫隔離測試。"""
+"""Round-trip and cross-user / cross-plan isolation tests for the in-memory repos."""
 
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ def _new_task(
     )
 
 
-# --- 計畫給定的四個重點案例 -------------------------------------------------
+# --- The four key cases called out by the plan --------------------------------
 
 
 async def test_plan_repo_scopes_by_user() -> None:

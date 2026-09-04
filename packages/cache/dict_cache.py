@@ -10,7 +10,7 @@ class _Entry:
 
 
 class DictCache:
-    """行程內快取，僅供測試與單機開發使用。"""
+    """In-process cache, for tests and single-machine development only."""
 
     def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
         self._clock = clock

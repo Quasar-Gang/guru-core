@@ -4,7 +4,7 @@ import redis.asyncio as aioredis
 
 
 class RedisCache:
-    """以 Redis 為後端的 CachePort 實作。"""
+    """CachePort implementation backed by Redis."""
 
     def __init__(self, url: str) -> None:
         self._pool = aioredis.ConnectionPool.from_url(url, decode_responses=True)

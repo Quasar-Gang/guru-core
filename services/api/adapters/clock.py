@@ -1,4 +1,4 @@
-"""ClockPort 的兩個實作：正式的 SystemClock 與測試用的 FakeClock。"""
+"""Two ClockPort implementations: SystemClock for production, FakeClock for tests."""
 
 from datetime import UTC, datetime, timedelta
 
@@ -6,14 +6,14 @@ __all__ = ["FakeClock", "SystemClock"]
 
 
 class SystemClock:
-    """真實時鐘，一律回 timezone-aware UTC。"""
+    """Real clock; always returns a timezone-aware UTC datetime."""
 
     def now(self) -> datetime:
         return datetime.now(UTC)
 
 
 class FakeClock:
-    """測試用的可控時鐘。"""
+    """Controllable clock for tests."""
 
     def __init__(self, start: datetime) -> None:
         if start.tzinfo is None:

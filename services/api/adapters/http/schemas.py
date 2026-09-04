@@ -1,4 +1,4 @@
-"""HTTP 邊界上的 request / response model（全部 Pydantic v2）。"""
+"""Request and response models at the HTTP boundary (all Pydantic v2)."""
 
 from uuid import UUID
 

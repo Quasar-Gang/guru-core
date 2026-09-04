@@ -1,4 +1,4 @@
-"""匯入 package：統一的 Document 型別、來源／解析器 port 與 parser registry。"""
+"""Import package: the unified Document type, source/parser ports and the parser registry."""
 
 from packages.importers.document import DocEvent, Document, TextChunk
 from packages.importers.parsers import (

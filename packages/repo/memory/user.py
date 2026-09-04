@@ -1,4 +1,4 @@
-"""InMemoryUserRepo — 測試用的記憶體實作。"""
+"""InMemoryUserRepo — in-memory implementation for tests."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from packages.repo.entities import User
 
 
 class InMemoryUserRepo:
-    """把 users 放在 process 記憶體中的 UserRepo 實作。"""
+    """UserRepo implementation that keeps users in process memory."""
 
     def __init__(self) -> None:
         self._users: dict[UUID, User] = {}

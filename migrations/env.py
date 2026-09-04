@@ -1,4 +1,6 @@
-"""Alembic 環境：以同步 psycopg 驅動連線，schema 來自 packages.repo.models。"""
+"""Alembic environment. Connects with the synchronous psycopg driver;
+the schema comes from packages.repo.models.
+"""
 
 from __future__ import annotations
 

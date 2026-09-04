@@ -1,4 +1,4 @@
-"""取得單一 role model 詳情。"""
+"""Fetch a single role model."""
 
 from datetime import datetime
 from typing import Any
@@ -11,7 +11,7 @@ from services.role_model.application.errors import NotFound
 
 
 class RoleModelView(BaseModel):
-    """單一 role model 的完整投影（content 全文、tags、version）。"""
+    """The full projection of one role model: complete content, tags and version."""
 
     id: UUID
     kind: str

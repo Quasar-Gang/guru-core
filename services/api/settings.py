@@ -1,4 +1,4 @@
-"""API Service 的設定（pydantic-settings，讀環境變數與 `.env`）。"""
+"""API service settings, read from environment variables and `.env` via pydantic-settings."""
 
 from pathlib import Path
 from typing import Literal

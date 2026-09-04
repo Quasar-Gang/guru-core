@@ -1,4 +1,4 @@
-"""HTML parser：依標題切段並去除標籤，只留文字。"""
+"""HTML parser: split on headings and strip the markup, keeping only text."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ _HEADINGS = frozenset({"h1", "h2", "h3", "h4", "h5", "h6"})
 
 
 class HtmlParser:
-    """解析 HTML，<h1>–<h6> 的文字成為該段的 section。"""
+    """Parse HTML; the text of an <h1>-<h6> element becomes the chunk's section."""
 
     def supports(self, fmt: str) -> bool:
         return fmt == "html"

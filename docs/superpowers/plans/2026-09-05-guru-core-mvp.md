@@ -37,7 +37,16 @@
     - 物件儲存：**MVP 不接 Cloudflare R2**。`StoragePort` 的正式實作是 `LocalFileStorage`（寫本機目錄，presign 回本地 API 的簽章 URL）。`R2Storage` 於 M5 補上，屆時只改 `container.py` 與環境變數，不動任何 use case。
 17. **LLM**：開發與測試一律用 `FakeLLM`（讀 `tests/fixtures/llm/`）。`OpenAICompatLLM` / `AnthropicLLM` 需實作並有以 mock transport 為基礎的測試，但不在 CI 打外網。
 18. **`domain` 層引用 `packages.llm` 時只能 import 子模組**：寫 `from packages.llm.ports import Purpose`，不可寫 `from packages.llm import Purpose`。因為 `packages/llm/__init__.py` 會 eager import `openai_compat`（進而拉入 `httpx`），走根模組會讓 import-linter 的 `domain-pure` 契約失敗。`application` 層同理。
-19. **每個 service 與 package 根目錄一份 `README.md`**，只回答三個問題：負責什麼、對外 port 有哪些、不負責什麼。
+19. **程式碼一律英文**。所有識別字、註解、docstring、log 與例外訊息、測試名稱、Markdown 文件（README、CONTRIBUTING）與 YAML 註解都必須用英文。唯一的例外是「內容」而非程式碼的檔案，它們維持原語言：
+    - `packages/llm/prompts/*.md` — 給 LLM 讀的 prompt。
+    - `config/readiness_metrics.yaml` — 其文字會渲染進 evaluate prompt。
+    - `seeds/role_models/*.yaml` — role model 內容會渲染進 prompt（檔頭註解仍用英文）。
+    - `tests/fixtures/llm/*.json` — 模擬的 LLM 輸出。
+    - `tests/fixtures/importers/sample.*` — 模擬使用者上傳，刻意含非 ASCII 以暴露編碼問題；`csv_parser` 的表頭關鍵字（`開始` / `日期` / `結束`）也因此保留。
+    - PRD 固定格式、面向終端使用者的產品字串：Markdown 匯出的區塊標題（PRD 4.3.5）、trait 的 pacing 約束句與 persona 區塊標題（PRD 12.6）、`config/difficulty_coefficients.yaml` 的 `title_suffix`。
+    - `guru-core-PRD.md` — 原始規格，永不修改。
+    - **本計畫文件本身**（`docs/superpowers/plans/`）不受此限，維持中文。
+20. **每個 service 與 package 根目錄一份 `README.md`**，只回答三個問題：負責什麼、對外 port 有哪些、不負責什麼。
 
 ---
 

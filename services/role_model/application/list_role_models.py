@@ -1,4 +1,4 @@
-"""列出 role model 摘要，可依 kind 與 tags 過濾。"""
+"""List role model summaries, optionally filtered by kind and tags."""
 
 from collections.abc import Sequence
 from typing import Literal
@@ -10,7 +10,7 @@ from packages.repo import RoleModel, RoleModelRepo
 
 
 class RoleModelSummary(BaseModel):
-    """列表用的精簡投影，不含 content 全文。"""
+    """The trimmed projection used by listings; it omits the full content."""
 
     id: UUID
     kind: str

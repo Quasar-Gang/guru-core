@@ -1,4 +1,4 @@
-"""LLM 呼叫觀測（PRD 7.8）：每次呼叫記錄的欄位與最小實作。"""
+"""LLM call observability (PRD 7.8): the fields recorded per call, plus a minimal observer."""
 
 import logging
 from typing import Protocol
@@ -31,7 +31,7 @@ class LlmObserver(Protocol):
 
 
 class NullObserver:
-    """只寫 structured log，不落 DB。"""
+    """Write a structured log line only; nothing is persisted to the database."""
 
     async def record(self, log: LlmCallLog) -> None:
         _logger.info("llm_call", extra={"llm_call": log.model_dump(mode="json")})

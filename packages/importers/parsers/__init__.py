@@ -1,4 +1,4 @@
-"""七個 ParserPort 實作。"""
+"""The seven ParserPort implementations."""
 
 from packages.importers.parsers.csv_parser import CsvParser
 from packages.importers.parsers.docx_parser import DocxParser

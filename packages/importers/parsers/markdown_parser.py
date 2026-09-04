@@ -1,4 +1,4 @@
-"""Markdown parser：依標題切段，每段一個 TextChunk。"""
+"""Markdown parser: split on headings, one TextChunk per section."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from packages.importers.ports import RawBlob
 
 
 class MarkdownParser:
-    """解析 Markdown 文字，標題文字成為該段的 section。"""
+    """Parse Markdown text; the heading text becomes the chunk's section."""
 
     def supports(self, fmt: str) -> bool:
         return fmt == "md"
