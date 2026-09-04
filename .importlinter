@@ -1,0 +1,75 @@
+[importlinter]
+include_external_packages = True
+root_packages =
+    packages
+    services
+    cmd
+
+[importlinter:contract:layers]
+name = Hexagonal layers per service
+type = layers
+containers =
+    services.api
+    services.plan_engine
+    services.role_model
+layers =
+    adapters
+    application
+    domain
+
+[importlinter:contract:services-independent]
+name = Services must not import each other
+type = independence
+modules =
+    services.api
+    services.plan_engine
+    services.role_model
+
+[importlinter:contract:cmd-thin]
+name = cmd may only touch containers and packages
+type = forbidden
+source_modules =
+    cmd
+forbidden_modules =
+    services.api.application
+    services.api.domain
+    services.api.adapters
+    services.plan_engine.application
+    services.plan_engine.domain
+    services.plan_engine.adapters
+    services.role_model.application
+    services.role_model.domain
+    services.role_model.adapters
+
+[importlinter:contract:domain-pure]
+name = Domain must not import frameworks or vendor SDKs
+type = forbidden
+source_modules =
+    services.api.domain
+    services.plan_engine.domain
+    services.role_model.domain
+forbidden_modules =
+    fastapi
+    sqlalchemy
+    arq
+    redis
+    boto3
+    openai
+    anthropic
+    httpx
+
+[importlinter:contract:application-no-vendor]
+name = Application must not import vendor SDKs
+type = forbidden
+source_modules =
+    services.api.application
+    services.plan_engine.application
+    services.role_model.application
+forbidden_modules =
+    fastapi
+    sqlalchemy
+    arq
+    redis
+    boto3
+    openai
+    anthropic
