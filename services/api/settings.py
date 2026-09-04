@@ -22,6 +22,11 @@ class ApiSettings(BaseSettings):
     storage_public_base_url: str
     storage_signing_secret: str
 
+    r2_account_id: str = ""
+    r2_access_key_id: str = ""
+    r2_secret_access_key: str = ""
+    r2_bucket: str = ""
+
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = ""

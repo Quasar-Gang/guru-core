@@ -10,6 +10,9 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from services.api.adapters.http.auth_router import router as auth_router
+from services.api.adapters.http.files_router import router as files_router
+from services.api.adapters.http.imports_router import router as imports_router
+from services.api.adapters.http.profile_router import router as profile_router
 from services.api.domain.errors import (
     Conflict,
     DomainError,
@@ -80,4 +83,7 @@ def create_app(container: ApiContainer) -> FastAPI:
         return {"status": "ok"}
 
     app.include_router(auth_router, prefix=API_PREFIX)
+    app.include_router(profile_router, prefix=API_PREFIX)
+    app.include_router(imports_router, prefix=API_PREFIX)
+    app.include_router(files_router, prefix=API_PREFIX)
     return app

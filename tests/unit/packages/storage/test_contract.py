@@ -1,18 +1,24 @@
 import hashlib
 import hmac
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from packages.storage import InMemoryStorage, LocalFileStorage, ObjectNotFound
+from tests.unit.packages.storage.test_r2 import mock_r2
 
 
-@pytest.fixture(params=["memory", "local"])
-def storage(request, tmp_path: Path):
+@pytest.fixture(params=["memory", "local", "r2"])
+def storage(request, tmp_path: Path) -> Iterator[object]:
     if request.param == "memory":
-        return InMemoryStorage()
-    return LocalFileStorage(tmp_path, "http://x/v1/files", "secret")
+        yield InMemoryStorage()
+    elif request.param == "local":
+        yield LocalFileStorage(tmp_path, "http://x/v1/files", "secret")
+    else:
+        with mock_r2() as r2:
+            yield r2
 
 
 async def test_put_then_get_roundtrip(storage):

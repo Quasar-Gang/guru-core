@@ -11,6 +11,7 @@ Both `build_container` and `build_test_container` pick it up automatically, so t
 no second place to update.
 """
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any
@@ -18,7 +19,8 @@ from typing import Any
 from fastapi import FastAPI
 
 from packages.cache import CachePort, DictCache, RedisCache
-from packages.queue import ArqQueue, InMemoryQueue, QueuePort
+from packages.importers import ParserRegistry, default_registry
+from packages.queue import ArqQueue, InMemoryQueue, JobPayload, QueuePort
 from packages.repo import (
     CheckinRepo,
     DocumentRepo,
@@ -65,13 +67,20 @@ from packages.repo import (
     build_engine,
     build_session_factory,
 )
-from packages.storage import InMemoryStorage, LocalFileStorage, StoragePort
+from packages.storage import InMemoryStorage, LocalFileStorage, R2Storage, StoragePort
 from services.api.adapters.clock import FakeClock, SystemClock
 from services.api.adapters.google.oidc import FakeGoogleOidc, GoogleOidc
 from services.api.adapters.http.app import create_app
 from services.api.adapters.jwt_issuer import HmacTokenIssuer
+from services.api.adapters.queue.import_consumer import ImportParseConsumer
+from services.api.application.complete_import import CompleteImport
+from services.api.application.get_profile import GetProfile
+from services.api.application.list_imports import ListImports
 from services.api.application.login_with_google import LoginWithGoogle
+from services.api.application.parse_import import ParseImport
 from services.api.application.ports import ClockPort, GoogleOidcPort, TokenIssuerPort
+from services.api.application.presign_import import PresignImport
+from services.api.application.update_profile import UpdateProfile
 from services.api.settings import ApiSettings
 
 __all__ = [
@@ -80,6 +89,7 @@ __all__ = [
     "build_test_container",
     "create_app",
     "create_asgi_app",
+    "create_worker_handlers",
 ]
 
 
@@ -106,6 +116,7 @@ class ApiContainer:
     # --- infrastructure ports ---
     storage: StoragePort
     queue: QueuePort
+    parsers: ParserRegistry
     cache: CachePort
     clock: ClockPort
     tokens: TokenIssuerPort
@@ -113,6 +124,12 @@ class ApiContainer:
 
     # --- use cases (one field each) ---
     login_with_google: LoginWithGoogle
+    get_profile: GetProfile
+    update_profile: UpdateProfile
+    presign_import: PresignImport
+    complete_import: CompleteImport
+    list_imports: ListImports
+    parse_import: ParseImport
 
 
 def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
@@ -120,6 +137,16 @@ def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
     return {
         "login_with_google": LoginWithGoogle(
             parts["users"], parts["profiles"], parts["oidc"], parts["tokens"]
+        ),
+        "get_profile": GetProfile(parts["profiles"], parts["clock"]),
+        "update_profile": UpdateProfile(parts["profiles"]),
+        "presign_import": PresignImport(parts["imports"], parts["storage"]),
+        "complete_import": CompleteImport(
+            parts["imports"], parts["documents"], parts["storage"], parts["queue"]
+        ),
+        "list_imports": ListImports(parts["imports"], parts["documents"]),
+        "parse_import": ParseImport(
+            parts["imports"], parts["documents"], parts["storage"], parts["parsers"]
         ),
     }
 
@@ -139,11 +166,25 @@ def _assemble(parts: dict[str, Any], overrides: dict[str, Any]) -> ApiContainer:
     return ApiContainer(**(merged | _build_use_cases(merged) | overrides))
 
 
+_R2_REQUIRED_SETTINGS = ("r2_account_id", "r2_access_key_id", "r2_secret_access_key", "r2_bucket")
+
+
 def _build_storage(settings: ApiSettings) -> StoragePort:
+    """Pick the StoragePort implementation. This is the only place the backend is chosen."""
     if settings.storage_backend == "memory":
         return InMemoryStorage()
     if settings.storage_backend == "r2":
-        raise NotImplementedError("R2Storage lands in M5 (Task 40)")
+        missing = [name for name in _R2_REQUIRED_SETTINGS if not getattr(settings, name)]
+        if missing:
+            raise ValueError(
+                "storage_backend='r2' requires these settings to be set: " + ", ".join(missing)
+            )
+        return R2Storage(
+            account_id=settings.r2_account_id,
+            access_key_id=settings.r2_access_key_id,
+            secret_access_key=settings.r2_secret_access_key,
+            bucket=settings.r2_bucket,
+        )
     return LocalFileStorage(
         Path(settings.storage_local_root),
         settings.storage_public_base_url,
@@ -173,6 +214,7 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         "plan_exports": PgPlanExportRepo(session_factory),
         "llm_calls": PgLlmCallRepo(session_factory),
         "storage": _build_storage(resolved),
+        "parsers": default_registry(),
         "queue": ArqQueue(resolved.redis_url),
         "cache": RedisCache(resolved.redis_url),
         "clock": clock,
@@ -219,6 +261,7 @@ def build_test_container(**overrides: Any) -> ApiContainer:
         "plan_exports": InMemoryPlanExportRepo(),
         "llm_calls": InMemoryLlmCallRepo(),
         "storage": InMemoryStorage(),
+        "parsers": default_registry(),
         "queue": InMemoryQueue(),
         "cache": DictCache(),
         "clock": clock,
@@ -237,3 +280,13 @@ def build_test_container(**overrides: Any) -> ApiContainer:
 def create_asgi_app() -> FastAPI:
     """uvicorn factory used by `cmd/api_server.py`."""
     return create_app(build_container())
+
+
+def create_worker_handlers(
+    container: ApiContainer,
+) -> dict[str, Callable[[JobPayload], Awaitable[None]]]:
+    """Queue name -> handler map used by `cmd/api_worker.py`."""
+    return {
+        "import.parse": ImportParseConsumer(container.parse_import),
+        # TODO(Task 34): register the "export.push" handler once PushExport exists.
+    }

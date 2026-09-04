@@ -1,6 +1,13 @@
 """Plan Engine domain: plan template types and the session state machine."""
 
 from services.plan_engine.domain.capacity import BusyBlock, Capacity, TimeWindow
+from services.plan_engine.domain.diff import (
+    DiffKind,
+    TaskDiffEntry,
+    TaskSnapshot,
+    TaskSnapshotWithKey,
+    diff_tasks,
+)
 from services.plan_engine.domain.difficulty import (
     Difficulty,
     DifficultyCoefficients,
@@ -50,6 +57,7 @@ __all__ = [
     "BusyBlock",
     "Capacity",
     "DayHint",
+    "DiffKind",
     "Difficulty",
     "DifficultyCoefficients",
     "DifficultyConfig",
@@ -72,11 +80,15 @@ __all__ = [
     "SchedulerConfig",
     "SessionStatus",
     "SlotHint",
+    "TaskDiffEntry",
+    "TaskSnapshot",
+    "TaskSnapshotWithKey",
     "TaskType",
     "TimeWindow",
     "WeeklyItem",
     "assert_transition",
     "derive",
+    "diff_tasks",
     "is_terminal",
     "load_difficulty_config",
     "load_readiness_config",
