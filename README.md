@@ -101,14 +101,14 @@ uv run python -m cmd.role_model_server   # HTTP, port 8001
 Or the whole stack in containers — **one image, six roles**, the entrypoint decides which:
 
 ```bash
-docker compose up -d --build
-docker compose exec api python -m alembic upgrade head
-docker compose exec api python -m cmd.seed_role_models
-bash scripts/smoke.sh                 # end-to-end: sign in → plan → tasks → export
+make deploy env=local                 # build + up + migrate + seed
+make deploy-smoke env=local           # end-to-end: sign in → plan → tasks → export
+make deploy-down env=local
 ```
 
 Compose publishes postgres and redis on 5433 / 6380 so they do not collide with the
-services already running on your machine.
+services already running on your machine. `env=production` runs the same targets
+against a DigitalOcean Droplet — see [`deployment/README.md`](deployment/README.md).
 
 ## Configuration
 

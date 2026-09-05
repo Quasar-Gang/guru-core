@@ -1,10 +1,17 @@
-# Isolated stack for end-to-end verification. Day-to-day development uses the
-# PostgreSQL and Redis already running on 5432 / 6379, so these publish on
-# 5433 / 6380 to avoid a collision.
-name: guru-core
+# Local stack: the whole system in containers, built from this working tree.
+#
+#   make deploy-up env=local
+#
+# Everything here is a throwaway development value — no .env file is read.
+# Day-to-day development uses the PostgreSQL and Redis already running on
+# 5432 / 6379, so these publish on 5433 / 6380 to avoid a collision.
+name: guru-core-local
 
+# The image is built once, by the `api` service; the other three only run it.
+# Four services declaring the same build would race on the same tag.
 x-app: &app
-  build: .
+  image: guru-core:local
+  restart: unless-stopped
   environment: &app-env
     DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/guru_core
     REDIS_URL: redis://redis:6379/0
@@ -32,6 +39,8 @@ x-app: &app
 services:
   postgres:
     image: postgres:15
+    container_name: guru-core-local-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -48,6 +57,8 @@ services:
 
   redis:
     image: redis:7
+    container_name: guru-core-local-redis
+    restart: unless-stopped
     ports:
       - "6380:6379"
     healthcheck:
@@ -58,20 +69,27 @@ services:
 
   api:
     <<: *app
+    container_name: guru-core-local-api
+    build:
+      context: ../..
+      dockerfile: Dockerfile
     command: ["cmd.api_server"]
     ports:
       - "8000:8000"
 
   api-worker:
     <<: *app
+    container_name: guru-core-local-api-worker
     command: ["cmd.api_worker"]
 
   engine:
     <<: *app
+    container_name: guru-core-local-engine
     command: ["cmd.plan_engine_worker"]
 
   role-model:
     <<: *app
+    container_name: guru-core-local-role-model
     command: ["cmd.role_model_server"]
     ports:
       - "8001:8001"
