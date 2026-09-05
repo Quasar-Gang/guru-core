@@ -2,7 +2,7 @@
 
 The backend for coach.ai. A user states a goal; the system merges whatever context it has, asks follow-up questions when something essential is missing, and produces three difficulty variants of an executable plan. Plans export to Google Calendar or Markdown, tasks are checked off day by day, and a plan can be revised when the user falls behind.
 
-Specification: [`guru-core-PRD.md`](guru-core-PRD.md). Implementation plan: [`docs/superpowers/plans/`](docs/superpowers/plans/). Engineering rules: [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Specification: [`guru-core-PRD.md`](guru-core-PRD.md). Engineering rules: [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## Architecture
 
