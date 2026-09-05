@@ -197,14 +197,21 @@ be invisible and expensive.
 
 ## Diagrams
 
-The four diagrams above are pre-rendered SVGs with an explicit white canvas, so they
-look the same in light and dark mode — mermaid's own output is transparent and would
-otherwise pick up the reader's page colour. Sources live in
-[`docs/diagrams/`](docs/diagrams/) as `.mmd`; after editing one, regenerate with:
+All four diagrams are SVGs with an explicit white canvas, so they look the same in
+light and dark mode — mermaid's own output is transparent and would otherwise pick up
+the reader's page colour.
+
+Three of them are generated from `.mmd` sources in [`docs/diagrams/`](docs/diagrams/).
+After editing one, regenerate with:
 
 ```bash
 uv run python scripts/render_diagrams.py   # opens a browser, writes docs/assets/*.svg
 ```
+
+The first one, `flow-goal-to-plan.svg`, is hand-drawn and has no `.mmd` source — the
+gradients, the runway bars encoding 15/12/10 weeks, and the converging optional inputs
+are past what mermaid can express. Edit that file directly; the generator skips it
+because nothing in `docs/diagrams/` matches its name.
 
 ## Repository layout
 
