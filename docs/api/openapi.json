@@ -1,0 +1,5279 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "guru-core API",
+    "description": "\nThe single endpoint the app talks to. A user states a goal; the service collects\nwhatever context exists, asks follow-up questions when something essential is missing,\nand produces three difficulty variants of a scheduled plan.\n\n**Authentication.** Every endpoint except `POST /v1/auth/google`, `GET /health` and the\npresigned `/v1/files/*` routes needs `Authorization: Bearer <jwt>`. Get the token from\n`POST /v1/auth/google`; it carries the user id and expires after `JWT_TTL_SECONDS`.\nThe team-facing `role-models` writes authenticate with `X-API-Key` instead.\n\n**Long-running work.** Plan generation, import parsing and calendar export run on a\nqueue, so the endpoints that start them return `202` with an id. Poll the resource\n(`GET /v1/plan-sessions/{id}`, `GET /v1/imports`) rather than expecting a synchronous\nresult — PostgreSQL is the source of truth for job state, Redis only caches it.\n\n**Errors.** Every failure returns the same envelope:\n`{\"error\": {\"code\": \"not_found\", \"message\": \"...\"}}`. The code is the snake_case name of\nthe domain error: `invalid_input` (422), `unauthorized` (401), `forbidden` (403),\n`not_found` (404), `conflict` (409), `reauth_required` (409), `rate_limited` (429).\n",
+    "contact": {
+      "name": "Quasar-Gang",
+      "url": "https://github.com/Quasar-Gang/guru-core"
+    },
+    "license": {
+      "name": "Proprietary — all rights reserved"
+    },
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "ops"
+        ],
+        "summary": "Health",
+        "description": "Unauthenticated, and exempt from rate limiting.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/google": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Exchange a Google authorization code for an API token",
+        "description": "The entry point of the whole API: the only endpoint that needs no bearer token.\n\nThe client runs the Google sign-in flow itself, then posts the one-time `code` here\ntogether with the exact `redirect_uri` it used. The service verifies the code with\nGoogle, finds or creates the user behind that Google account, and returns **our own**\nJWT — a Google token never reaches the client.\n\nSend the returned `access_token` as `Authorization: Bearer <token>` on every other\nendpoint. It expires after `JWT_TTL_SECONDS`; when it does, run this flow again.\n\n`is_new_user` is `true` only on the very first login of an account, which is created\nwith an empty profile and the `UTC` timezone. Use it to decide whether to send the\nuser through onboarding (`PUT /v1/profile`) or straight into the app.\n\nSigning in does **not** grant calendar or spreadsheet access. That is a second,\nseparate consent handled by `GET /v1/integrations/google/authorize`.",
+        "operationId": "login_with_google_v1_auth_google_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The API JWT plus the identity behind it, and whether this is a signup.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — Google refused the exchange: the `code` is wrong, already spent or expired, the `redirect_uri` does not match the one the code was issued for, or the returned `id_token` is malformed. Restart the consent flow to obtain a fresh code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — `code` or `redirect_uri` is missing from the body.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this client address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Identify the caller behind the bearer token",
+        "description": "Resolve the stored token to a user, without needing to decode the JWT client-side.\n\nUseful on app start to decide between \"signed in\" and \"signed out\": a `200` means the\ntoken is still good, a `401` means it must be replaced via `POST /v1/auth/google`.\nThis is identity only — the questionnaire answers and timezone live on\n`GET /v1/profile`.",
+        "operationId": "me_v1_me_get",
+        "responses": {
+          "200": {
+            "description": "The id and email of the user the token belongs to.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization` header is missing, is not a Bearer token, or the JWT is invalid or expired. Sign in again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — the token is valid but the user it points at no longer exists (the account was deleted). Treat it like a signed-out session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests for this user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ]
+      }
+    },
+    "/v1/profile": {
+      "get": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "Read the signed-in user's profile",
+        "description": "The standing context every plan is generated against: who the user is and where.\n\n`answers` holds the onboarding questionnaire as a free-form JSON object, and\n`timezone` is the IANA zone every scheduled task is placed in. The plan engine reads\nthis on each generation, so keeping it current directly improves plan quality.\n\nA user who has never written a profile is **not** an error: this returns\n`answers: {}`, `timezone: \"UTC\"` and the current time as `updated_at`. There is no\n`404` here — use `is_new_user` from login, or an empty `answers`, to decide whether to\nshow onboarding.",
+        "operationId": "get_profile_v1_profile_get",
+        "responses": {
+          "200": {
+            "description": "The stored answers and timezone, or the defaults when nothing has been saved yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — missing, invalid or expired bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests for this user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "profile"
+        ],
+        "summary": "Replace the signed-in user's profile",
+        "description": "Write the onboarding answers, and later any edit the user makes to them.\n\nThis is a genuine `PUT`: `answers` **replaces** the stored object wholesale, it is not\nmerged key by key. To change one answer, read `GET /v1/profile`, edit the object\nclient-side, and send the whole thing back. Omitting `answers` entirely stores `{}`\nand wipes what was there.\n\n`timezone` is the exception: omit it or send `null` to keep the zone the user already\nhas (or `UTC` on a first write). When present it must be an IANA zone name; it is\nvalidated against the system tz database before anything is saved, so a bad value\nchanges nothing.\n\nTypically called right after a login that returned `is_new_user: true`, and again\nwhenever the user revisits their settings. Later plan generations pick the new values\nup automatically; plans already generated are not rewritten.",
+        "operationId": "update_profile_v1_profile_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateProfileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The profile as stored, including the resolved timezone.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — missing, invalid or expired bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — `answers` is not a JSON object, one of its keys is not a string, or `timezone` is not a name the IANA database knows (e.g. `Asia/Taipei`, not `GMT+8`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests for this user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ]
+      }
+    },
+    "/v1/imports/presign": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Step 1 of a file upload: reserve an import and get a direct-upload URL",
+        "description": "First of the three calls that bring a file into the system.\n\nDeclare the file up front — name, MIME type and size — and this creates an import row\nin status `pending` and returns a presigned `upload_url`. Nothing is stored yet; the\nbytes never pass through this endpoint.\n\nThe full upload flow:\n\n1. `POST /v1/imports/presign` → `import_id` + `upload_url`.\n2. `PUT` the raw bytes to `upload_url` **as-is** (query string included), with the\n   same `Content-Type` you declared. Send no `Authorization` header: the URL carries\n   its own signature.\n3. `POST /v1/imports/{import_id}/complete` to queue the file for parsing.\n\nLimits and validation, all enforced here so a rejected file never gets uploaded:\n\n- **Maximum 20 MB** (`20971520` bytes). `size_bytes` is trusted at this step, so the\n  client must send the real size.\n- **`upload_url` is valid for 900 seconds (15 minutes)** — the returned `expires_in`.\n  Once it lapses the URL returns `403`; call presign again for a fresh one.\n- The format is decided now, from the file extension first and `content_type` only as\n  a fallback. Supported: `csv`, `xlsx`, `md`, `html`, `pdf`, `docx`, `ics`.\n- `filename` is reduced to a single path segment, so directories and `..` in the name\n  are stripped rather than rejected.\n\nAn import that is presigned but never completed simply stays `pending` and is never\nparsed; it is harmless to abandon.",
+        "operationId": "presign_import_v1_imports_presign_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresignRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The new `import_id`, the URL to PUT the bytes to, the storage key, and the lifetime of that URL in seconds (900).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresignResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — missing, invalid or expired bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — `size_bytes` exceeds the 20 MB limit (20971520 bytes), `filename` is empty once stripped of path segments, or neither the extension nor `content_type` maps to a supported format.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests for this user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ]
+      }
+    },
+    "/v1/imports/{import_id}/complete": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Step 3 of a file upload: confirm the bytes landed and queue parsing",
+        "description": "Call this once the `PUT` to the presigned URL has returned `200`.\n\nIt verifies the object really exists in storage, moves the import from `pending` to\n`queued`, and enqueues an `import.parse` job. **Parsing is asynchronous** — this\nreturns immediately, well before the file has been read.\n\nPoll `GET /v1/imports` until the row leaves `queued`:\n\n- `parsed` — success. `event_count` and `chunk_count` are now filled in and the\n  content is available to plan generation.\n- `failed` — the file could not be read; `error` carries the reason. The upload is\n  not retried automatically; presign and upload a corrected file.\n\nSkipping this call leaves a perfectly uploaded file stuck in `pending` forever.",
+        "operationId": "complete_import_v1_imports__import_id__complete_post",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "import_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Import Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The import, now in status `queued`. Counts are still zero.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — missing, invalid or expired bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no import with this id belongs to the caller. Imports are scoped per user, so another user's id looks the same as a missing one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — nothing was found at the storage key for this import: the `PUT` to `upload_url` never happened, failed, or the URL had already expired. Presign again and re-upload.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests for this user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/imports": {
+      "get": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "List every import belonging to the signed-in user",
+        "description": "The polling endpoint for both import routes, and the source for an \"imports\" screen.\n\nOne row per import, whatever its origin: `source` is `upload` for a presigned file and\n`google_calendar` for a calendar pull.\n\n`status` moves `pending` → `queued` → `parsed` | `failed` for uploads; a calendar\nimport is written synchronously and appears as `parsed` right away. `error` is set\nonly in `failed`. `event_count` and `chunk_count` stay `0` until a document has been\nwritten, so they are a reliable signal of how much the parser actually extracted.\n\nThere is no per-import GET; poll this list after `complete`.",
+        "operationId": "list_imports_v1_imports_get",
+        "responses": {
+          "200": {
+            "description": "All imports, newest first, with their status and parsed counts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ImportView"
+                  },
+                  "type": "array",
+                  "title": "Response List Imports V1 Imports Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — missing, invalid or expired bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests for this user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ]
+      }
+    },
+    "/v1/imports/google-calendar": {
+      "post": {
+        "tags": [
+          "imports"
+        ],
+        "summary": "Import upcoming Google Calendar events as context",
+        "description": "Pull the user's existing commitments straight from Google, with no file involved.\n\n**Prerequisite:** the user must already have connected Google through\n`GET /v1/integrations/google/authorize` and `POST /v1/integrations/google/callback`.\nSigning in with Google is not enough — calendar access is a separate consent. Without\nit this returns `409 reauth_required`.\n\nUnlike an upload this is **synchronous**: the events are fetched and stored within the\nrequest, and the returned import is already `parsed` with `event_count` filled in.\nThere is nothing to poll and no presign/complete pair.\n\n`days` is a forward-looking window starting now — default `90`, maximum `365`. Past\nevents are never imported. Re-running creates a new, independent import rather than\nupdating the previous one, so plan generation sees the newest pull alongside the old.",
+        "operationId": "import_google_calendar_v1_imports_google_calendar_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GoogleCalendarImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The finished import, already in status `parsed`, with its event count.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — missing, invalid or expired bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`reauth_required` — Google is not connected for this user, the connection was disconnected, or the stored refresh token was rejected. Send the user through `GET /v1/integrations/google/authorize` again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — `days` is outside the range 1–365.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests for this user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ]
+      }
+    },
+    "/v1/integrations": {
+      "get": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "List the user's third-party connections",
+        "description": "What the app checks before offering anything that needs Google.\n\nRead `connected` and `needs_reauth` together:\n\n- not listed at all — never connected; show a \"Connect Google\" button.\n- `connected: true` — good to go for calendar import and calendar/Sheets export.\n- `connected: false, needs_reauth: true` — the connection was disconnected or revoked\n  upstream. The row is deliberately kept so the app can prompt for a reconnect; the\n  fix is the same authorize → callback pair as a first connection.\n\n`scopes` lists what Google actually granted, and `connected_at` is when the row was\nfirst created. An empty list is normal: signing in with Google creates no integration\nrow, because sign-in and calendar access are separate grants.",
+        "operationId": "list_integrations_v1_integrations_get",
+        "responses": {
+          "200": {
+            "description": "One row per provider the user has ever connected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/IntegrationView"
+                  },
+                  "type": "array",
+                  "title": "Response List Integrations V1 Integrations Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — missing, invalid or expired bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests for this user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ]
+      }
+    },
+    "/v1/integrations/{provider}/authorize": {
+      "get": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "Step 1 of connecting a provider: get the consent URL",
+        "description": "Begin the second Google grant — the one that gives the backend calendar access.\n\n`provider` must be `google`; it is the only integration in the MVP.\n\nSend the user to `authorize_url` (redirect or popup). One consent covers all three\nthings the backend does on their behalf: reading the calendar for\n`POST /v1/imports/google-calendar`, writing events for calendar export, and creating\nthe spreadsheet for the Sheets export. It is requested with `access_type=offline` and\n`prompt=consent` so Google returns a refresh token; without one the connection cannot\nbe completed.\n\nThe URL already carries an unguessable `state` nonce and the server-configured\nredirect URI — pass it through unmodified. Nothing is persisted until step 2,\n`POST /v1/integrations/{provider}/callback`, so an abandoned consent leaves no trace.",
+        "operationId": "authorize_integration_v1_integrations__provider__authorize_get",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A Google consent URL to send the user to. Nothing is stored yet.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthorizeUrlResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — missing, invalid or expired bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — `provider` is not `google`, the only provider supported.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests for this user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/integrations/{provider}/callback": {
+      "post": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "Step 2 of connecting a provider: redeem the consent code",
+        "description": "Finish the connection with the `code` Google appended to the redirect.\n\nNote this is **the app's own authenticated endpoint**, not a URL Google calls: the\nclient catches the redirect, pulls `code` out of the query string, and posts it here\nwith its normal bearer token. That is why the `state` nonce only has to be\nunguessable — the user is identified by the JWT, not by `state`.\n\nThe refresh token is encrypted at rest and never leaves the backend; the client is\nnever given a Google token. A repeat connection upserts the same row rather than\ncreating a duplicate, so reconnecting after a `needs_reauth` is safe.\n\nOnce this returns, `POST /v1/imports/google-calendar` and the Google export routes\nstop failing with `409 reauth_required`.",
+        "operationId": "complete_integration_v1_integrations__provider__callback_post",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CallbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The stored connection, now `connected: true`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — missing, invalid or expired bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — `provider` is not `google`, or Google returned no refresh token (usually a re-consent where the user had already granted access). Restart at `/authorize`, which forces the consent screen.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests for this user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The token exchange with Google failed outright — typically a `code` that is expired, already redeemed, or issued for a different redirect URI. Restart at `/authorize` for a fresh code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/integrations/{provider}": {
+      "delete": {
+        "tags": [
+          "integrations"
+        ],
+        "summary": "Disconnect a provider",
+        "description": "Revoke the grant upstream at Google and stop using it here.\n\nThe stored refresh token is revoked with Google, the row is marked revoked, and the\ncached access token is dropped, so the very next Google call fails with\n`409 reauth_required` rather than using a stale token.\n\nThe row is **not** deleted: `GET /v1/integrations` keeps returning it as\n`connected: false, needs_reauth: true` so the app can offer a reconnect. Calling this\ntwice is safe — the second call finds the row already revoked and only re-clears the\ncache. Plans already exported to Google Calendar are left in place; only future\nimports and exports stop working.",
+        "operationId": "disconnect_integration_v1_integrations__provider__delete",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "provider",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Provider"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Disconnected. Nothing is returned."
+          },
+          "401": {
+            "description": "`unauthorized` — missing, invalid or expired bearer token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — this user has no connection row for that provider.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — `provider` is not `google`, the only provider supported.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests for this user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/files/{key}": {
+      "put": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Upload bytes to a presigned URL (step 2 of a file import)",
+        "description": "The destination of the `upload_url` returned by `POST /v1/imports/presign`.\n\n**Do not construct this URL yourself.** Take `upload_url` verbatim, query string and\nall, and `PUT` the raw file bytes to it — no multipart wrapper, no JSON envelope.\n\nAuthorization comes entirely from the `exp`/`op`/`sig` query parameters, which are\nsigned for exactly this key, this operation and this expiry; send **no**\n`Authorization` header. The URL is good for 15 minutes and this route is exempt from\nthe per-minute rate limit, so a large upload cannot spend the user's request budget.\n\nSend the same `Content-Type` you declared at presign time; it is stored alongside the\nobject. A missing header falls back to `application/octet-stream`. The 20 MB limit was\nalready enforced at presign, so it is not re-checked here.\n\nA `200` only means the bytes landed. The import stays `pending` until you call\n`POST /v1/imports/{import_id}/complete`.\n\nThis route exists for the local storage backend; in a deployment backed by object\nstorage the presigned URL points at the bucket instead. Either way the client code is\nthe same: PUT to whatever `upload_url` says.",
+        "operationId": "upload_file_v1_files__key__put",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Storage key, as embedded in the presigned URL.",
+              "title": "Key"
+            },
+            "description": "Storage key, as embedded in the presigned URL."
+          },
+          {
+            "name": "exp",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "Unix timestamp after which the signature is refused.",
+              "title": "Exp"
+            },
+            "description": "Unix timestamp after which the signature is refused."
+          },
+          {
+            "name": "op",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Operation the signature was minted for; must be `put` here.",
+              "title": "Op"
+            },
+            "description": "Operation the signature was minted for; must be `put` here."
+          },
+          {
+            "name": "sig",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "HMAC signature over `op`, `key` and `exp`.",
+              "title": "Sig"
+            },
+            "description": "HMAC signature over `op`, `key` and `exp`."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stored. The response body is empty.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "403": {
+            "description": "`forbidden` — the signature does not match, was minted for the other operation (a `get` URL cannot be used to `put`), or `exp` has passed. Presigned URLs live for 15 minutes; ask for a new one rather than editing the query string.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Download bytes from a presigned URL",
+        "description": "Read back an object through a download URL the backend handed out.\n\nSame rules as the upload route: use the URL exactly as given, send no bearer token,\nand expect it to stop working 15 minutes after it was minted. The signature covers the\n`get` operation specifically, so an upload URL cannot be replayed as a download.\n\nThe body is always served as `application/octet-stream` regardless of the type the\nobject was stored with, so treat it as a binary download rather than something to\nrender inline. Like the upload route, it is exempt from the per-minute rate limit.",
+        "operationId": "download_file_v1_files__key__get",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Storage key, as embedded in the presigned URL.",
+              "title": "Key"
+            },
+            "description": "Storage key, as embedded in the presigned URL."
+          },
+          {
+            "name": "exp",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "Unix timestamp after which the signature is refused.",
+              "title": "Exp"
+            },
+            "description": "Unix timestamp after which the signature is refused."
+          },
+          {
+            "name": "op",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Operation the signature was minted for; must be `get` here.",
+              "title": "Op"
+            },
+            "description": "Operation the signature was minted for; must be `get` here."
+          },
+          {
+            "name": "sig",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "HMAC signature over `op`, `key` and `exp`.",
+              "title": "Sig"
+            },
+            "description": "HMAC signature over `op`, `key` and `exp`."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The object's bytes.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "application/octet-stream": {}
+            }
+          },
+          "403": {
+            "description": "`forbidden` — the signature does not match, was minted for the other operation (a `get` URL cannot be used to `put`), or `exp` has passed. Presigned URLs live for 15 minutes; ask for a new one rather than editing the query string.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — the signature is valid but no object exists at that key: it was never uploaded, or has since been deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plan-sessions": {
+      "post": {
+        "tags": [
+          "plan-sessions"
+        ],
+        "summary": "Start plan generation from a goal",
+        "description": "Where plan generation begins. **Only `goal` is required**; everything else is context.\n\n- `intake` — free-form answers about schedule, level and constraints. Whatever is missing\n  is what the service will ask about in the follow-up round.\n- `import_ids` — ids from `GET /v1/imports`. Each must belong to the caller and already be\n  `parsed`; anything else is rejected with 422 rather than silently ignored.\n- `trait_role_model_id` / `persona_role_model_id` — optional picks from `/v1/role-models`.\n- A live Google Calendar connection is picked up automatically, so the generated schedule\n  avoids the user's existing events. No field controls this.\n\nThe response is `202`, never a plan: generation runs on the queue. Poll\n`GET /v1/plan-sessions/{session_id}` and drive the UI off `status`:\n\n| status | what the client does |\n| --- | --- |\n| `collecting` | keep polling — context is being gathered |\n| `evaluating` | keep polling — the service is deciding whether it knows enough |\n| `questioning` | render `questions`, answer via `POST /v1/plan-sessions/{id}/answers` |\n| `generating` | keep polling — the three plans are being written |\n| `done` | `plans` holds three difficulty variants; let the user pick one |\n| `failed` | show `error`; the session is terminal and cannot be resumed |\n\n`GET /v1/jobs/{job_id}` reports the queue's own view of the same work, but the session row\nis the source of truth — a job record can expire while the session stays readable.",
+        "operationId": "create_plan_session_v1_plan_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePlanSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. `session_id` is the resource to poll; `job_id` identifies the queued `plan.generate` job.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateSessionResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — `goal` is empty or whitespace only, one of `import_ids` does not belong to the caller, or an import has not finished parsing (its `status` is not `parsed`). Body validation failures use the same code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ]
+      }
+    },
+    "/v1/plan-sessions/{session_id}": {
+      "get": {
+        "tags": [
+          "plan-sessions"
+        ],
+        "summary": "Poll a plan session for questions or the finished plans",
+        "description": "The one endpoint to poll after `POST /v1/plan-sessions` or a round of answers.\n\nWhich fields are populated depends entirely on `status`:\n\n- `questions` is non-empty **only** while `status` is `questioning`. Each question carries\n  its `options`, and whether a free-text answer (`allow_custom`) or a skip (`allow_skip`) is\n  accepted. `round` counts the follow-up rounds already asked; the service asks at most a\n  small fixed number and then generates with what it has.\n- `plans` is filled **only** once `status` is `done`, with the three difficulty variants —\n  each summarised with its weekly load (`sessions_per_week`, `total_minutes_per_week`) and\n  dates. All three start as `draft`; the user picks one by activating it with\n  `PATCH /v1/plans/{plan_id}` (`{\"status\": \"active\"}`).\n- `error` is set only when `status` is `failed`, which is terminal — start a new session.\n\nPolling is cheap but counts against the rate limit; a few seconds between calls is plenty.",
+        "operationId": "get_plan_session_v1_plan_sessions__session_id__get",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The session's current `status` and `round`, plus `questions` while `questioning` and `plans` once `done`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanSessionView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no session with this id belongs to the caller. Another user's session is indistinguishable from one that never existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plan-sessions/{session_id}/answers": {
+      "post": {
+        "tags": [
+          "plan-sessions"
+        ],
+        "summary": "Answer a follow-up round and resume generation",
+        "description": "Submit the answers to the questions currently returned by `GET /v1/plan-sessions/{id}`.\n\nAccepted **only while the session is `questioning`** — any other status is a 409. Each answer\nreferences a `question_id` from the current round and carries exactly one of: `choice` (a\nlisted option), `custom` (free text, when `allow_custom`), or `skipped: true` (when\n`allow_skip`). Unanswered questions may simply be left out.\n\nThis is `202`, not the plan: the session moves back to `evaluating`, and from there either to\n`questioning` again (one more round) or to `generating`. Keep polling\n`GET /v1/plan-sessions/{session_id}` exactly as after the initial create.",
+        "operationId": "submit_answers_v1_plan_sessions__session_id__answers_post",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitAnswersRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The same `session_id`, plus the `job_id` of the queued `plan.continue` job.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateSessionResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no session with this id belongs to the caller. Another user's session is indistinguishable from one that never existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`conflict` — the session is not waiting for answers: its `status` is something other than `questioning` (already `generating`, `done` or `failed`, so the answers arrived too late), or it has no follow-up round on record. Re-read the session with `GET /v1/plan-sessions/{session_id}` before retrying.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plans": {
+      "get": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "List the caller's plans",
+        "description": "The home screen's list: every plan the user owns, across all their sessions.\n\n**Without `status`, archived plans are hidden** — the default is \"what I still work on\", so\n`draft` (a generated variant not yet chosen) and `active` come back. Pass `status=archived`\nexplicitly to show the archive; `status=draft` or `status=active` narrow to one bucket.\n\nEach entry carries `completion_rate` (`done / (done + missed + skipped)`, `0.0` for a plan\nnobody has touched) and the weekly load, so no per-plan call is needed to render the list.\nUse `GET /v1/plans/{plan_id}` for phases, progress detail and export state.",
+        "operationId": "list_plans_v1_plans_get",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One summary per plan: title, difficulty, status, dates, weekly load and completion rate.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PlanSummary"
+                  },
+                  "title": "Response List Plans V1 Plans Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — `status` is not one of `draft`, `active` or `archived`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plans/{plan_id}": {
+      "get": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "Read one plan with its progress and export state",
+        "description": "Everything one plan screen needs, except the individual tasks.\n\n- `phases` — the plan's stages, each with its focus and milestone.\n- `progress` — task counts by status, `completion_rate`, a `rate` per phase, and\n  `checkpoints` (the milestone tasks with their due dates and current status).\n- `exports` — where this plan has been pushed and how far behind it is; `pending_changes` is\n  the number of task edits waiting for the next incremental push.\n- `status` — `draft`, `active` or `archived`. See `PATCH /v1/plans/{plan_id}`.\n\nThe scheduled tasks themselves come from `GET /v1/plans/{plan_id}/tasks`, which can be sliced\nto the date range on screen.",
+        "operationId": "get_plan_v1_plans__plan_id__get",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The plan's structure (`phases`, `success_criteria`, `assumptions`), its `progress` breakdown, and one `exports` row per target it has been pushed to.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no plan with this id belongs to the caller. Another user's plan is indistinguishable from one that never existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "Rename a plan, or move it through the lifecycle",
+        "description": "Rename a plan, and — more importantly — **this is how the user picks a plan**.\n\nA finished session leaves three `draft` plans. Sending `{\"status\": \"active\"}` on one of them\nis the choice: it becomes the running plan, and **the other plans of the same session are\npushed back to `draft` automatically** — a session never has two active plans.\n\nThe lifecycle, and every legal move:\n\n| from | to |\n| --- | --- |\n| `draft` | `active`, `archived` |\n| `active` | `draft`, `archived` |\n| `archived` | `active` |\n\nAnything else — including re-sending the status a plan already has — is a `409`\n`illegal_transition`. Both fields are optional; omitting them both is a no-op read.\n\nChanging status never touches an exported calendar. Use\n`DELETE /v1/plans/{plan_id}/export/{target}` for that.",
+        "operationId": "update_plan_v1_plans__plan_id__patch",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePlanRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The plan as it now stands, in the same shape as `GET /v1/plans/{id}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no plan with this id belongs to the caller. Another user's plan is indistinguishable from one that never existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`illegal_transition` — the requested move is not an edge of the lifecycle. In particular a plan cannot be set to the status it already has, and an `archived` plan can only go back to `active`, never straight to `draft`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — `title` is present but blank, or `status` is not one of `draft`, `active`, `archived`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "Delete a plan and everything attached to it",
+        "description": "Permanent, and it reaches outside the app — confirm with the user first.\n\nEvery export is undone before the plan goes, so the plan's secondary Google Calendar and all\nits events are deleted too, along with the plan's tasks, check-ins and revisions. There is no\nundo; offer `POST /v1/plans/{plan_id}/archive` to anyone who only wants it out of the way.\n\nRemoving the external calendar is best effort: a calendar the user already deleted, or a\nGoogle connection that has expired, does not block the deletion. Any status other than `204`\nmeans nothing was deleted.",
+        "operationId": "delete_plan_v1_plans__plan_id__delete",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "`204` with an empty body once the plan and its tasks are gone."
+          },
+          "404": {
+            "description": "`not_found` — no plan with this id belongs to the caller. Another user's plan is indistinguishable from one that never existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plans/{plan_id}/archive": {
+      "post": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "Archive a plan",
+        "description": "Put a plan away without losing it — the shorthand for `PATCH` with `archived`.\n\nThe plan and all its data stay; it simply drops out of the default `GET /v1/plans` listing\nand can be brought back with `PATCH /v1/plans/{plan_id}` (`{\"status\": \"active\"}`).\n\n**Archiving deliberately leaves an exported calendar alone**: events stay in Google Calendar\nuntil the plan is deleted, or the export is undone with\n`DELETE /v1/plans/{plan_id}/export/{target}`.",
+        "operationId": "archive_plan_v1_plans__plan_id__archive_post",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The archived plan, in the same shape as `GET /v1/plans/{id}`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no plan with this id belongs to the caller. Another user's plan is indistinguishable from one that never existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`illegal_transition` — the plan is already `archived`; there is nothing to do.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plans/{plan_id}/tasks": {
+      "get": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "List a plan's scheduled tasks over a date range",
+        "description": "What the built-in calendar and todo list are drawn from.\n\n`from` and `to` are **local calendar dates in the plan owner's timezone** (the one on their\nprofile, falling back to UTC), and **both ends are inclusive**: `from=2026-03-02&to=2026-03-08`\nis exactly that week, whatever the user's offset. Omit either end for an open range, or both\nfor the whole plan.\n\n`start_at` / `end_at` come back as UTC instants — render them in the user's timezone.\n`all_day` marks tasks with no meaningful time of day (rest days and checkpoints). `synced`\ntells you whether this task's current state has reached the exported calendar; it flips to\n`false` on every edit and back to `true` after the next push.",
+        "operationId": "list_plan_tasks_v1_plans__plan_id__tasks_get",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "`items` in schedule order plus `total`, the number of tasks in the requested range.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanTaskList"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no plan with this id belongs to the caller. Another user's plan is indistinguishable from one that never existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — `from` or `to` is not an ISO `YYYY-MM-DD` date.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plans/{plan_id}/tasks/{task_id}": {
+      "patch": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "Tick off, reschedule, or annotate one task",
+        "description": "One task at a time: the checkbox and the drag-and-drop of the calendar view.\n\nEvery field is optional; only what is sent changes. Sending nothing returns the task\nuntouched.\n\n- `status` — `pending`, `done`, `missed` or `skipped`. Moving to `done` stamps\n  `completed_at`; moving back to `pending` clears it.\n- `start_at` / `end_at` — reschedule. Either may be sent alone, but the resulting interval\n  must have `end_at` strictly after `start_at`, so a lone `start_at` that overruns the\n  existing `end_at` is a 422.\n- `missed_reason` — free text kept alongside a missed task; it is what a later\n  `postpone` / `reduce` revision explains itself with.\n\nAny accepted change marks the task out of sync and, **if the plan has been exported to Google\nCalendar, queues an incremental push automatically** — no export call is needed. The response\nis written before that push runs, so `synced` is `false` here and turns `true` once\n`GET /v1/plans/{plan_id}/export` reports `synced` again.\n\nTo record a whole day at once, use `POST /v1/plans/{plan_id}/checkins` instead.",
+        "operationId": "update_plan_task_v1_plans__plan_id__tasks__task_id__patch",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          },
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePlanTaskRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The task after the change, including its refreshed `synced` flag.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlanTaskView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — the plan does not belong to the caller, or the task does not belong to this plan.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — `status` is not one of `pending`, `done`, `missed`, `skipped`, or the resulting `end_at` is not strictly after `start_at`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plans/{plan_id}/checkins": {
+      "post": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "Submit the daily check-in",
+        "description": "Record how one day went, in a single call.\n\n`checkin_date` is a local calendar date, and there is **one check-in per plan per date**:\nsubmitting the same date again replaces the previous submission rather than adding to it, so\nan edited day should be re-sent in full.\n\nEach entry in `results` sets one task to `done`, `missed` or `skipped`, with an optional\n`reason` (stored as the task's `missed_reason`). The tasks are the real record — a check-in\nwrites straight through to them, so the counts in `GET /v1/plans/{plan_id}` move with it —\nand, when the plan is exported to Google Calendar, an incremental push is queued for the\ntasks that changed.\n\n`results` may be empty: that stores a note-only check-in and touches no task.",
+        "operationId": "submit_checkin_v1_plans__plan_id__checkins_post",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitCheckinRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The stored check-in for that date, with the results as recorded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckinView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no plan with this id belongs to the caller. Another user's plan is indistinguishable from one that never existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — one of `results[].task_id` does not belong to this plan, or a `status` is not one of `done`, `missed`, `skipped` (`pending` is not a check-in outcome).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "Read the check-in history and the daily completion curve",
+        "description": "The progress screen: every check-in ever submitted for this plan, plus its curve.\n\n`daily_rates` is derived per check-in — `done` over how many tasks that day's submission\ncovered — so it is a record of what the user reported, not of the plan as a whole. A day with\nno check-in has no point at all, and a note-only check-in scores `0.0` over `0` tasks.\n\nFor the plan-wide numbers (overall completion, per-phase rates, checkpoints) read\n`GET /v1/plans/{plan_id}` instead.",
+        "operationId": "list_checkins_v1_plans__plan_id__checkins_get",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "`items`, the check-ins as submitted, and `daily_rates`, one `done / total` point per check-in date.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckinHistory"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no plan with this id belongs to the caller. Another user's plan is indistinguishable from one that never existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plans/{plan_id}/export": {
+      "post": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "Export a plan: Markdown inline, everything else queued",
+        "description": "One entry point, **two very different behaviours depending on `target`**.\n\n`target: \"markdown\"` is **synchronous**. The document is rendered during this request and the\n`200` already carries it: `markdown.content` is the Markdown text (render or copy it straight\naway) and `markdown.download_url` is a pre-signed link to the stored file that **expires\nafter about 15 minutes** — fetch it now, do not persist it. There is no `job_id`, nothing is\nqueued, and nothing needs polling. `options` slices the document:\n`include_completed` (default `true`), and `from` / `to` as ISO dates.\n\nEvery other target — `google_calendar`, `google_sheets`, `notion` — is **asynchronous**. The\nresponse carries `job_id` and `mode` (`full` the first time, `incremental` once the plan has\na calendar of its own) and the work runs on the queue. Poll\n`GET /v1/plans/{plan_id}/export`, whose row moves `queued` → `synced` or `failed` (with\n`error`); `GET /v1/jobs/{job_id}` is a coarser view of the same push.\n\nEither way the plan must be `active` (409 otherwise), and a queued Google target needs a live\nGoogle connection, which is verified before anything is enqueued.",
+        "operationId": "request_export_v1_plans__plan_id__export_post",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestExportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "For `markdown`, `markdown` holds the rendered document and its download link. For every other target, `job_id` and `mode` describe the queued push and `markdown` is null.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExportRequestResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no plan with this id belongs to the caller. Another user's plan is indistinguishable from one that never existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Two different codes share this status. `conflict` — the plan is not `active`; only an active plan can be exported, so activate it with `PATCH /v1/plans/{plan_id}` first. `reauth_required` — a queued target needs Google, and the user has never connected it or the authorization has expired; send them through `/v1/integrations` and retry. This is checked up front, so the client is never left watching a job that was doomed from the start.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — `target` is not one of `markdown`, `google_calendar`, `google_sheets`, `notion`, or the `options` object is not valid for the target (for `markdown`: `include_completed` must be a boolean, `from` / `to` ISO dates).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "Check where each export target stands",
+        "description": "What to poll after a queued `POST /v1/plans/{plan_id}/export`.\n\nEach row carries `status` (`queued` while the push waits or runs, `synced` when it finished,\n`failed` with the reason in `error` — `reauth_required` there means the Google connection\nexpired mid-push), `external_calendar_id` (the calendar the events live in),\n`last_synced_at`, and `pending_changes`: how many task edits are waiting for the next\nincremental push.\n\nAn empty array means this plan has never been exported. Markdown exports are rendered inline\nand stored nowhere, so they are never listed.",
+        "operationId": "get_export_status_v1_plans__plan_id__export_get",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One row per target this plan has been exported to — empty until the first export. Markdown never appears here.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ExportStatusView"
+                  },
+                  "title": "Response Get Export Status V1 Plans  Plan Id  Export Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no plan with this id belongs to the caller. Another user's plan is indistinguishable from one that never existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plans/{plan_id}/export/{target}": {
+      "delete": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "Undo an export and delete the external calendar",
+        "description": "Take the plan back out of the external service; the plan itself is untouched.\n\n`target` is the value from `GET /v1/plans/{plan_id}/export` — in practice `google_calendar`.\n**The whole secondary calendar is removed, not the events one by one**, every task forgets its\nexternal reference, and the export row disappears, so a later export starts a fresh `full`\npush.\n\nDeleting the remote calendar is best effort: a calendar the user already removed, or an\nexpired Google connection, still leaves the local state cleaned up — a plan can never get\nstuck in an exported state it cannot leave.",
+        "operationId": "unexport_plan_v1_plans__plan_id__export__target__delete",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          },
+          {
+            "name": "target",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Target"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "`204` with an empty body once the export has been undone."
+          },
+          "404": {
+            "description": "`not_found` — the plan does not belong to the caller, or this plan has no export for `target` (nothing was ever pushed there, or it has already been undone).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plans/{plan_id}/revisions": {
+      "post": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "Ask for a revision when the plan has slipped",
+        "description": "Start a rescheduling proposal. **Nothing changes until the user accepts it.**\n\nTwo strategies:\n\n- `postpone` — keep the workload, push the remaining schedule later (and the deadline with\n  it); for someone who fell behind.\n- `reduce` — keep the dates, lighten the weekly load; for someone who cannot keep the pace.\n\n`note` is the user's own words about what went wrong; it is shown back until the engine\nreplaces it with its own `rationale`.\n\nRequires an `active` plan, and **only one revision may be open at a time** — a second request\nwhile a proposal is still undecided is a `409`.\n\nThis returns `202`: the proposal is computed on the queue. Poll\n`GET /v1/plans/{plan_id}/revisions/{revision_id}` until its `status` leaves `pending` for\n`proposed` (`diff` and `summary` now filled in) or `failed`, then show the diff and let the\nuser accept or reject it.",
+        "operationId": "create_revision_v1_plans__plan_id__revisions_post",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRevisionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. `revision_id` is the resource to poll; `job_id` identifies the queued `plan.revise` job.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateRevisionResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no plan with this id belongs to the caller. Another user's plan is indistinguishable from one that never existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`conflict` — either the plan is not `active` (only a running plan can be revised), or this plan **already has an open revision**: a plan may hold at most one undecided proposal, so accept or reject the existing one before asking for another. `GET /v1/plans/{plan_id}/revisions` shows which one is still `pending` or `proposed`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — `strategy` is not `postpone` or `reduce`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "List every revision ever asked for on this plan",
+        "description": "The plan's revision history, including the one still awaiting a decision.\n\nOldest first. At most one entry is undecided (`status: \"proposed\"`), and that is the one\nblocking a new `POST /v1/plans/{plan_id}/revisions` — as is one still being computed\n(`pending`); the rest are `accepted`, `rejected` or `failed`. `decided_at` stays null\nuntil the user answers.",
+        "operationId": "list_revisions_v1_plans__plan_id__revisions_get",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "All revisions, oldest first, each with its full diff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RevisionView"
+                  },
+                  "title": "Response List Revisions V1 Plans  Plan Id  Revisions Get"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no plan with this id belongs to the caller. Another user's plan is indistinguishable from one that never existed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plans/{plan_id}/revisions/{revision_id}": {
+      "get": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "Read one revision and its proposed diff",
+        "description": "Poll this after a `202` from `POST /v1/plans/{plan_id}/revisions`, then render the diff.\n\nWhile the engine is still working, `diff` is empty and `rationale` still holds the user's own\nnote. Once `status` is `proposed`, `rationale` explains the proposal and `diff` lists the\naffected tasks, each with `before` / `after` snapshots and a `kind`: `added`, `moved`,\n`removed`, `shortened`, `lengthened`, `reduced` or `unchanged`. `summary` counts those kinds\nfor a one-line headline (\"3 moved, 1 removed\").\n\nA `proposed` revision is a preview only — the plan's tasks are still the old ones until\n`POST .../accept`.",
+        "operationId": "get_revision_v1_plans__plan_id__revisions__revision_id__get",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          },
+          {
+            "name": "revision_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Revision Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The revision's `status` and `rationale`, the per-task `diff`, and a `summary` counting the diff by kind.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — the plan does not belong to the caller, or no revision with this id belongs to that plan.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plans/{plan_id}/revisions/{revision_id}/accept": {
+      "post": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "Accept a proposed revision and rewrite the schedule",
+        "description": "Apply the proposal. **This is the only thing that ever rewrites a plan's schedule.**\n\nEverything from **today onwards** is replaced by the proposed tasks; days already past keep\ntheir history, including what was ticked off. The plan's own fields follow the proposal too —\n`deadline`, `duration_weeks`, `goal_statement` and its structure — so re-read\n`GET /v1/plans/{plan_id}` and `GET /v1/plans/{plan_id}/tasks` afterwards rather than patching\nthe client's copy.\n\nIf the plan is exported to Google Calendar, an incremental push is queued automatically;\nwatch `GET /v1/plans/{plan_id}/export` for it to land.\n\nThe decision is final and frees the plan for a future revision; call it only on a revision\nwhose `status` is `proposed`.",
+        "operationId": "accept_revision_v1_plans__plan_id__revisions__revision_id__accept_post",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          },
+          {
+            "name": "revision_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Revision Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The revision, now `accepted`, with `decided_at` set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — the plan does not belong to the caller, or no revision with this id belongs to that plan.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`conflict` — the revision is not `proposed`: it is still being computed, it `failed`, or it has already been accepted or rejected (a decision is final). The same code is returned when a revision reached `proposed` carrying no proposal to apply.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/plans/{plan_id}/revisions/{revision_id}/reject": {
+      "post": {
+        "tags": [
+          "plans"
+        ],
+        "summary": "Reject a proposed revision and keep the plan as is",
+        "description": "Turn the proposal down. The plan, its tasks and its exports are left exactly as they were.\n\nThe revision is kept in the history as `rejected` — nothing is written to the plan — and the\nplan is free to be revised again, so the user can immediately ask for the other strategy with\n`POST /v1/plans/{plan_id}/revisions`.",
+        "operationId": "reject_revision_v1_plans__plan_id__revisions__revision_id__reject_post",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "plan_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Plan Id"
+            }
+          },
+          {
+            "name": "revision_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Revision Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The revision, now `rejected`, with `decided_at` set.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevisionView"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — the plan does not belong to the caller, or no revision with this id belongs to that plan.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`conflict` — the revision is not `proposed`: it is still being computed, it `failed`, or it has already been accepted or rejected (a decision is final).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Check the state of one queued job",
+        "description": "A progress indicator for the `job_id` returned by any `202` endpoint.\n\nWhere the ids come from: `POST /v1/plan-sessions`, `POST /v1/plan-sessions/{id}/answers`,\n`POST /v1/plans/{id}/revisions`, `POST /v1/plans/{id}/export` for a queued target, and the\nimport endpoints.\n\n`status` is one of `queued`, `running`, `done`, `failed`, or `unknown`. **`unknown` is not an\nerror**: job records are short-lived (Redis is only a cache here), so a job that finished a\nwhile ago reports `unknown` rather than `done`.\n\nBecause of that, this endpoint is a hint, never the answer. The durable state lives on the\nresource itself, and that is what the UI should render:\n\n- plan generation → `GET /v1/plan-sessions/{session_id}` (`status`, `error`)\n- a revision → `GET /v1/plans/{plan_id}/revisions/{revision_id}` (`status`, `diff`)\n- a calendar export → `GET /v1/plans/{plan_id}/export` (`status`, `error`)\n\nNever 404s — a missing job is reported as `unknown` in a `200`. Job rows carry no user id, so\nthis endpoint only requires a valid login and does not check ownership of the underlying work;\ntreat a `job_id` as a secret and do not display one job's status on another user's screen.",
+        "operationId": "get_job_v1_jobs__job_id__get",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The job id echoed back, plus `status`: `queued`, `running`, `done`, `failed`, or `unknown` when no record of the job survives.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobView"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/role-models": {
+      "get": {
+        "tags": [
+          "role-models"
+        ],
+        "summary": "Browse the role model catalogue",
+        "description": "The picker behind `trait_role_model_id` / `persona_role_model_id` on a plan session.\n\nRole models are the shared, team-curated library the plan generator borrows from: a *trait*\nmodel shapes how a plan is structured, a *persona* model shapes how it speaks. Filter with\n`kind`, and with `tags` repeated once per tag (`?tags=fitness&tags=beginner`) — `match=any`\nreturns anything carrying one of them, `match=all` only what carries every one.\n\n**Auth: the user's JWT.** Reading the catalogue is open to any signed-in user; only the\n`POST` / `PUT` / `DELETE` routes below are team-only.\n\nProxied straight from the Role Model Service, so the body and status are that service's,\nnot this one's. The error envelope is identical in both.",
+        "operationId": "list_role_models_v1_role_models_get",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Kind"
+            }
+          },
+          {
+            "name": "tags",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Tags"
+            }
+          },
+          {
+            "name": "match",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "any",
+                "all"
+              ],
+              "type": "string",
+              "default": "any",
+              "title": "Match"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A JSON array of role model summaries (`id`, `kind`, `name`, `tags`), proxied verbatim from the Role Model Service.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — `limit` is outside 1–200, or `match` is not `any` / `all`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "role-models"
+        ],
+        "summary": "Create a role model (team only, X-API-Key)",
+        "description": "Add an entry to the shared catalogue. **Content tooling only — not an app endpoint.**\n\n**Auth: `X-API-Key`, not a JWT.** The header is forwarded to the Role Model Service, which\nchecks it; no user token is involved and no user context is recorded. The catalogue is global,\nso anything created here is visible to every signed-in user.\n\nThe body is passed through unvalidated by this service: `kind` and a non-empty `name` are\nrequired, with optional `tags` (list of strings) and `content` (a free-form object whose shape\nthe Role Model Service defines). The status and body of the response are the upstream ones.",
+        "operationId": "create_role_model_v1_role_models_post",
+        "parameters": [
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "`201` with the created record, proxied from the Role Model Service.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `X-API-Key` header is missing or does not match the Role Model Service's key. This is a team credential, not the user's JWT: a signed-in end user cannot reach this endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — the body is missing `kind` or `name`, or `name` is empty.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/role-models/tags": {
+      "get": {
+        "tags": [
+          "role-models"
+        ],
+        "summary": "List the tags available for filtering",
+        "description": "The vocabulary for the `tags` filter of `GET /v1/role-models`.\n\nUse it to build the filter UI instead of hard-coding tag names: the catalogue is curated by\nthe team and its tags change without an app release. Requires the user's JWT.",
+        "operationId": "list_tags_v1_role_models_tags_get",
+        "responses": {
+          "200": {
+            "description": "An object keyed by role model `kind`, each holding the tags in use for that kind.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ]
+      }
+    },
+    "/v1/role-models/recommend": {
+      "get": {
+        "tags": [
+          "role-models"
+        ],
+        "summary": "Recommend persona role models for the caller's goal",
+        "description": "Suggest role models to preselect before `POST /v1/plan-sessions`.\n\nPass the goal the user just typed; the API service adds their stored questionnaire answers\n(from `GET /v1/profile`) and asks the Role Model Service to rank the catalogue. `domains` and\n`excluded_constraints` are repeatable query parameters that narrow or veto candidates.\n\nNothing is persisted: the result is a suggestion the user may take or ignore. Feed a chosen\n`role_model_id` into `persona_role_model_id` (or `trait_role_model_id`) when creating the\nsession. Requires the user's JWT — the recommendation is personalised to the caller.",
+        "operationId": "recommend_role_models_v1_role_models_recommend_get",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "goal",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Goal"
+            }
+          },
+          {
+            "name": "domains",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Domains"
+            }
+          },
+          {
+            "name": "excluded_constraints",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "default": [],
+              "title": "Excluded Constraints"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Up to a handful of recommendations, best first: `role_model_id`, `name`, and a `reason` written for display next to the suggestion.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RecommendationView"
+                  },
+                  "title": "Response Recommend Role Models V1 Role Models Recommend Get"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — the Role Model Service could not resolve part of the request. Treat it as 'no recommendations' rather than a broken screen.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — the Role Model Service rejected the assembled payload (for example an unusable `domains` or `excluded_constraints` value).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "`domain_error` — the Role Model Service is unreachable or answered with an unexpected status. The screen can fall back to `GET /v1/role-models`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/role-models/{role_model_id}": {
+      "get": {
+        "tags": [
+          "role-models"
+        ],
+        "summary": "Read one role model in full",
+        "description": "The detail view behind a catalogue entry, for the screen where a user picks one.\n\n`content` is the curated document the plan generator reads; its shape belongs to the Role\nModel Service and is not part of this API's contract, so render it defensively. Requires the\nuser's JWT.",
+        "operationId": "get_role_model_v1_role_models__role_model_id__get",
+        "security": [
+          {
+            "BearerJWT": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "role_model_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Role Model Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The full record — `id`, `kind`, `name`, `tags` and the `content` document — proxied from the Role Model Service.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed, or the token has expired.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no active role model with this id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "role-models"
+        ],
+        "summary": "Replace a role model (team only, X-API-Key)",
+        "description": "Overwrite one catalogue entry. **Content tooling only — not an app endpoint.**\n\n**Auth: `X-API-Key`, not a JWT.** A full replacement, not a patch: fields left out of the body\nare cleared, so send the whole record. Plans already generated from this role model keep the\ntext they were generated with — the edit only affects future generation.",
+        "operationId": "update_role_model_v1_role_models__role_model_id__put",
+        "parameters": [
+          {
+            "name": "role_model_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Role Model Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true,
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated record, proxied from the Role Model Service.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `X-API-Key` header is missing or does not match the Role Model Service's key. This is a team credential, not the user's JWT: a signed-in end user cannot reach this endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no active role model with this id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_input` — the body is missing `kind` or `name`, or `name` is empty.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "role-models"
+        ],
+        "summary": "Retire a role model (team only, X-API-Key)",
+        "description": "Take an entry out of the catalogue. **Content tooling only — not an app endpoint.**\n\n**Auth: `X-API-Key`, not a JWT.** Upstream this deactivates rather than erases: the role model\nstops appearing in `GET /v1/role-models`, while plans and sessions that referenced it stay\nintact. The response carries no body.",
+        "operationId": "delete_role_model_v1_role_models__role_model_id__delete",
+        "parameters": [
+          {
+            "name": "role_model_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Role Model Id"
+            }
+          },
+          {
+            "name": "X-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "`204` with an empty body once the role model is deactivated.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthorized` — the `X-API-Key` header is missing or does not match the Role Model Service's key. This is a team credential, not the user's JWT: a signed-in end user cannot reach this endpoint.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no active role model with this id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited` — too many requests from this caller in the last minute. The response carries `Retry-After`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AnswerInput": {
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "choice": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Choice"
+          },
+          "custom": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom"
+          },
+          "skipped": {
+            "type": "boolean",
+            "title": "Skipped",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "question_id"
+        ],
+        "title": "AnswerInput",
+        "description": "One answer: a picked option, a free-text reply, or an explicit skip."
+      },
+      "AuthorizeUrlResponse": {
+        "properties": {
+          "authorize_url": {
+            "type": "string",
+            "title": "Authorize Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "authorize_url"
+        ],
+        "title": "AuthorizeUrlResponse"
+      },
+      "CallbackRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "CallbackRequest"
+      },
+      "CheckinHistory": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CheckinView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "daily_rates": {
+            "items": {
+              "$ref": "#/components/schemas/DailyRate"
+            },
+            "type": "array",
+            "title": "Daily Rates"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "daily_rates"
+        ],
+        "title": "CheckinHistory"
+      },
+      "CheckinResultInput": {
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Task Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "done",
+              "missed",
+              "skipped"
+            ],
+            "title": "Status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "task_id",
+          "status"
+        ],
+        "title": "CheckinResultInput",
+        "description": "What the user ticked for one task."
+      },
+      "CheckinView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "checkin_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Checkin Date"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/CheckinResultInput"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "checkin_date",
+          "results",
+          "note",
+          "created_at"
+        ],
+        "title": "CheckinView"
+      },
+      "CheckpointStatus": {
+        "properties": {
+          "phase_index": {
+            "type": "integer",
+            "title": "Phase Index"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "metric": {
+            "type": "string",
+            "title": "Metric"
+          },
+          "due_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Due At"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phase_index",
+          "title",
+          "metric",
+          "due_at",
+          "status"
+        ],
+        "title": "CheckpointStatus",
+        "description": "One phase milestone, as scheduled into a `checkpoint` task."
+      },
+      "CreatePlanSessionRequest": {
+        "properties": {
+          "goal": {
+            "type": "string",
+            "title": "Goal"
+          },
+          "intake": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Intake",
+            "default": {}
+          },
+          "import_ids": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Import Ids",
+            "default": []
+          },
+          "trait_role_model_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trait Role Model Id"
+          },
+          "persona_role_model_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Persona Role Model Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "goal"
+        ],
+        "title": "CreatePlanSessionRequest"
+      },
+      "CreateRevisionRequest": {
+        "properties": {
+          "strategy": {
+            "type": "string",
+            "title": "Strategy"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy"
+        ],
+        "title": "CreateRevisionRequest"
+      },
+      "CreateRevisionResult": {
+        "properties": {
+          "revision_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Revision Id"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision_id",
+          "job_id"
+        ],
+        "title": "CreateRevisionResult",
+        "description": "202 body: the revision exists, but its proposal is computed by the engine."
+      },
+      "CreateSessionResult": {
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "session_id",
+          "job_id"
+        ],
+        "title": "CreateSessionResult",
+        "description": "What both `POST /plan-sessions` and `POST /plan-sessions/{id}/answers` return."
+      },
+      "DailyRate": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "rate": {
+            "type": "number",
+            "title": "Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "done",
+          "total",
+          "rate"
+        ],
+        "title": "DailyRate"
+      },
+      "ErrorBody": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ErrorBody"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorBody"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse"
+      },
+      "ExportRequestResult": {
+        "properties": {
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mode"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id"
+          },
+          "markdown": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MarkdownExportResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "target"
+        ],
+        "title": "ExportRequestResult",
+        "description": "Either an inline Markdown document, or the handle of the queued push."
+      },
+      "ExportStatusView": {
+        "properties": {
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "external_calendar_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "External Calendar Id"
+          },
+          "last_synced_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Synced At"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "pending_changes": {
+            "type": "integer",
+            "title": "Pending Changes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target",
+          "status",
+          "external_calendar_id",
+          "last_synced_at",
+          "error",
+          "pending_changes"
+        ],
+        "title": "ExportStatusView",
+        "description": "One row of `plan_exports`, plus how many task changes are still unsynced."
+      },
+      "FollowupQuestion": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "metric_id": {
+            "type": "string",
+            "title": "Metric Id"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "options": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Options",
+            "default": []
+          },
+          "allow_custom": {
+            "type": "boolean",
+            "title": "Allow Custom",
+            "default": true
+          },
+          "allow_skip": {
+            "type": "boolean",
+            "title": "Allow Skip",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "metric_id",
+          "text"
+        ],
+        "title": "FollowupQuestion",
+        "description": "One follow-up question as the client sees it.\n\nDeliberately a second definition of the Plan Engine's\n`services.plan_engine.domain.readiness.FollowupQuestion`: services must not import each\nother, so the two sides are bound by the JSON stored in `followup_rounds.questions`,\nexactly as `Pacing` is duplicated between the Plan Engine and the Role Model service."
+      },
+      "GoogleCalendarImportRequest": {
+        "properties": {
+          "days": {
+            "type": "integer",
+            "title": "Days",
+            "default": 90
+          }
+        },
+        "type": "object",
+        "title": "GoogleCalendarImportRequest"
+      },
+      "GoogleLoginRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "redirect_uri": {
+            "type": "string",
+            "title": "Redirect Uri"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "redirect_uri"
+        ],
+        "title": "GoogleLoginRequest"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ImportView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source"
+          },
+          "format": {
+            "type": "string",
+            "title": "Format"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "event_count": {
+            "type": "integer",
+            "title": "Event Count",
+            "default": 0
+          },
+          "chunk_count": {
+            "type": "integer",
+            "title": "Chunk Count",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "source",
+          "format",
+          "filename",
+          "status",
+          "error",
+          "created_at"
+        ],
+        "title": "ImportView",
+        "description": "One import as seen by the API client."
+      },
+      "IntegrationView": {
+        "properties": {
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "connected": {
+            "type": "boolean",
+            "title": "Connected"
+          },
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Scopes"
+          },
+          "needs_reauth": {
+            "type": "boolean",
+            "title": "Needs Reauth"
+          },
+          "connected_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connected At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provider",
+          "connected",
+          "scopes",
+          "needs_reauth",
+          "connected_at"
+        ],
+        "title": "IntegrationView",
+        "description": "One provider connection as seen by the API client (PRD 3.6)."
+      },
+      "JobView": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status"
+        ],
+        "title": "JobView"
+      },
+      "LoginResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "is_new_user": {
+            "type": "boolean",
+            "title": "Is New User"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "user_id",
+          "email",
+          "is_new_user"
+        ],
+        "title": "LoginResponse"
+      },
+      "MarkdownExportResult": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "download_url": {
+            "type": "string",
+            "title": "Download Url"
+          },
+          "storage_key": {
+            "type": "string",
+            "title": "Storage Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content",
+          "download_url",
+          "storage_key"
+        ],
+        "title": "MarkdownExportResult",
+        "description": "The rendered document, both inline and as a stored object."
+      },
+      "MeResponse": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "email"
+        ],
+        "title": "MeResponse"
+      },
+      "PhaseData": {
+        "properties": {
+          "index": {
+            "type": "integer",
+            "title": "Index"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "week_start": {
+            "type": "integer",
+            "title": "Week Start"
+          },
+          "week_end": {
+            "type": "integer",
+            "title": "Week End"
+          },
+          "focus": {
+            "type": "string",
+            "title": "Focus",
+            "default": ""
+          },
+          "milestone_title": {
+            "type": "string",
+            "title": "Milestone Title",
+            "default": ""
+          },
+          "milestone_metric": {
+            "type": "string",
+            "title": "Milestone Metric",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "index",
+          "name",
+          "week_start",
+          "week_end"
+        ],
+        "title": "PhaseData",
+        "description": "One phase of `plans.structure[\"phases\"]`."
+      },
+      "PhaseRate": {
+        "properties": {
+          "phase_index": {
+            "type": "integer",
+            "title": "Phase Index"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "rate": {
+            "type": "number",
+            "title": "Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "phase_index",
+          "name",
+          "done",
+          "total",
+          "rate"
+        ],
+        "title": "PhaseRate",
+        "description": "How far one phase of the plan has been worked through."
+      },
+      "PlanDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "session_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Session Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "difficulty": {
+            "type": "string",
+            "title": "Difficulty"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "goal_statement": {
+            "type": "string",
+            "title": "Goal Statement"
+          },
+          "duration_weeks": {
+            "type": "integer",
+            "title": "Duration Weeks"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date",
+            "title": "Deadline"
+          },
+          "phases": {
+            "items": {
+              "$ref": "#/components/schemas/PhaseData"
+            },
+            "type": "array",
+            "title": "Phases"
+          },
+          "success_criteria": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Success Criteria"
+          },
+          "assumptions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Assumptions"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/PlanProgress"
+          },
+          "exports": {
+            "items": {
+              "$ref": "#/components/schemas/ExportStatusView"
+            },
+            "type": "array",
+            "title": "Exports"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "session_id",
+          "title",
+          "difficulty",
+          "status",
+          "goal_statement",
+          "duration_weeks",
+          "start_date",
+          "deadline",
+          "progress"
+        ],
+        "title": "PlanDetail"
+      },
+      "PlanProgress": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "done": {
+            "type": "integer",
+            "title": "Done"
+          },
+          "missed": {
+            "type": "integer",
+            "title": "Missed"
+          },
+          "skipped": {
+            "type": "integer",
+            "title": "Skipped"
+          },
+          "pending": {
+            "type": "integer",
+            "title": "Pending"
+          },
+          "completion_rate": {
+            "type": "number",
+            "title": "Completion Rate"
+          },
+          "phase_rates": {
+            "items": {
+              "$ref": "#/components/schemas/PhaseRate"
+            },
+            "type": "array",
+            "title": "Phase Rates"
+          },
+          "checkpoints": {
+            "items": {
+              "$ref": "#/components/schemas/CheckpointStatus"
+            },
+            "type": "array",
+            "title": "Checkpoints"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "done",
+          "missed",
+          "skipped",
+          "pending",
+          "completion_rate"
+        ],
+        "title": "PlanProgress"
+      },
+      "PlanSessionView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round"
+          },
+          "goal": {
+            "type": "string",
+            "title": "Goal"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/FollowupQuestion"
+            },
+            "type": "array",
+            "title": "Questions",
+            "default": []
+          },
+          "plans": {
+            "items": {
+              "$ref": "#/components/schemas/PlanSummary"
+            },
+            "type": "array",
+            "title": "Plans",
+            "default": []
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "round",
+          "goal"
+        ],
+        "title": "PlanSessionView"
+      },
+      "PlanSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "difficulty": {
+            "type": "string",
+            "title": "Difficulty"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "duration_weeks": {
+            "type": "integer",
+            "title": "Duration Weeks"
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Start Date"
+          },
+          "deadline": {
+            "type": "string",
+            "format": "date",
+            "title": "Deadline"
+          },
+          "goal_statement": {
+            "type": "string",
+            "title": "Goal Statement"
+          },
+          "sessions_per_week": {
+            "type": "integer",
+            "title": "Sessions Per Week"
+          },
+          "total_minutes_per_week": {
+            "type": "integer",
+            "title": "Total Minutes Per Week"
+          },
+          "completion_rate": {
+            "type": "number",
+            "title": "Completion Rate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "difficulty",
+          "status",
+          "duration_weeks",
+          "start_date",
+          "deadline",
+          "goal_statement",
+          "sessions_per_week",
+          "total_minutes_per_week",
+          "completion_rate"
+        ],
+        "title": "PlanSummary",
+        "description": "One generated plan, condensed to what a chooser screen needs."
+      },
+      "PlanTaskList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PlanTaskView"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "PlanTaskList"
+      },
+      "PlanTaskView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "template_key": {
+            "type": "string",
+            "title": "Template Key"
+          },
+          "week_index": {
+            "type": "integer",
+            "title": "Week Index"
+          },
+          "phase_index": {
+            "type": "integer",
+            "title": "Phase Index"
+          },
+          "occurrence": {
+            "type": "integer",
+            "title": "Occurrence"
+          },
+          "task_type": {
+            "type": "string",
+            "title": "Task Type"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start At"
+          },
+          "end_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End At"
+          },
+          "all_day": {
+            "type": "boolean",
+            "title": "All Day"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "missed_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missed Reason"
+          },
+          "synced": {
+            "type": "boolean",
+            "title": "Synced"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "template_key",
+          "week_index",
+          "phase_index",
+          "occurrence",
+          "task_type",
+          "title",
+          "description",
+          "start_at",
+          "end_at",
+          "all_day",
+          "status",
+          "completed_at",
+          "missed_reason",
+          "synced"
+        ],
+        "title": "PlanTaskView",
+        "description": "One plan task as the client sees it."
+      },
+      "PresignRequest": {
+        "properties": {
+          "filename": {
+            "type": "string",
+            "title": "Filename"
+          },
+          "content_type": {
+            "type": "string",
+            "title": "Content Type"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "filename",
+          "content_type",
+          "size_bytes"
+        ],
+        "title": "PresignRequest"
+      },
+      "PresignResult": {
+        "properties": {
+          "import_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Import Id"
+          },
+          "upload_url": {
+            "type": "string",
+            "title": "Upload Url"
+          },
+          "storage_key": {
+            "type": "string",
+            "title": "Storage Key"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In"
+          }
+        },
+        "type": "object",
+        "required": [
+          "import_id",
+          "upload_url",
+          "storage_key",
+          "expires_in"
+        ],
+        "title": "PresignResult"
+      },
+      "ProfileView": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "User Id"
+          },
+          "answers": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Answers"
+          },
+          "timezone": {
+            "type": "string",
+            "title": "Timezone"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "answers",
+          "timezone",
+          "updated_at"
+        ],
+        "title": "ProfileView"
+      },
+      "RecommendationView": {
+        "properties": {
+          "role_model_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Role Model Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role_model_id",
+          "name",
+          "reason"
+        ],
+        "title": "RecommendationView",
+        "description": "One recommendation as returned to the app."
+      },
+      "RequestExportRequest": {
+        "properties": {
+          "target": {
+            "type": "string",
+            "title": "Target"
+          },
+          "options": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Options",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "target"
+        ],
+        "title": "RequestExportRequest"
+      },
+      "RevisionDiffSummary": {
+        "properties": {
+          "added": {
+            "type": "integer",
+            "title": "Added",
+            "default": 0
+          },
+          "moved": {
+            "type": "integer",
+            "title": "Moved",
+            "default": 0
+          },
+          "removed": {
+            "type": "integer",
+            "title": "Removed",
+            "default": 0
+          },
+          "shortened": {
+            "type": "integer",
+            "title": "Shortened",
+            "default": 0
+          },
+          "lengthened": {
+            "type": "integer",
+            "title": "Lengthened",
+            "default": 0
+          },
+          "unchanged": {
+            "type": "integer",
+            "title": "Unchanged",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "RevisionDiffSummary",
+        "description": "How many entries of each kind the diff holds; the app renders this as a headline."
+      },
+      "RevisionView": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "plan_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Plan Id"
+          },
+          "strategy": {
+            "type": "string",
+            "title": "Strategy"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rationale"
+          },
+          "diff": {
+            "items": {
+              "$ref": "#/components/schemas/TaskDiffEntry"
+            },
+            "type": "array",
+            "title": "Diff"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/RevisionDiffSummary"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "decided_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Decided At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "plan_id",
+          "strategy",
+          "status",
+          "rationale",
+          "diff",
+          "summary",
+          "created_at",
+          "decided_at"
+        ],
+        "title": "RevisionView"
+      },
+      "SubmitAnswersRequest": {
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/AnswerInput"
+            },
+            "type": "array",
+            "title": "Answers",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "SubmitAnswersRequest"
+      },
+      "SubmitCheckinRequest": {
+        "properties": {
+          "checkin_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Checkin Date"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/CheckinResultInput"
+            },
+            "type": "array",
+            "title": "Results",
+            "default": []
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "checkin_date"
+        ],
+        "title": "SubmitCheckinRequest"
+      },
+      "TaskDiffEntry": {
+        "properties": {
+          "template_key": {
+            "type": "string",
+            "title": "Template Key"
+          },
+          "week_index": {
+            "type": "integer",
+            "title": "Week Index"
+          },
+          "occurrence": {
+            "type": "integer",
+            "title": "Occurrence"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "added",
+              "moved",
+              "removed",
+              "shortened",
+              "lengthened",
+              "reduced",
+              "unchanged"
+            ],
+            "title": "Kind"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "after": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "template_key",
+          "week_index",
+          "occurrence",
+          "kind",
+          "title",
+          "before",
+          "after"
+        ],
+        "title": "TaskDiffEntry",
+        "description": "One entry of `plan_revisions.diff`, aligned on the scheduler's stable task key."
+      },
+      "TaskSnapshot": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "start_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start At"
+          },
+          "end_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End At"
+          },
+          "all_day": {
+            "type": "boolean",
+            "title": "All Day"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "start_at",
+          "end_at",
+          "all_day"
+        ],
+        "title": "TaskSnapshot",
+        "description": "One side of a diff entry: how a task looks before or after the revision."
+      },
+      "UpdatePlanRequest": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "title": "UpdatePlanRequest"
+      },
+      "UpdatePlanTaskRequest": {
+        "properties": {
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "start_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start At"
+          },
+          "end_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End At"
+          },
+          "missed_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Missed Reason"
+          }
+        },
+        "type": "object",
+        "title": "UpdatePlanTaskRequest"
+      },
+      "UpdateProfileRequest": {
+        "properties": {
+          "answers": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Answers",
+            "default": {}
+          },
+          "timezone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
+          }
+        },
+        "type": "object",
+        "title": "UpdateProfileRequest"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "BearerJWT": {
+        "type": "http",
+        "description": "A JWT issued by `POST /v1/auth/google`. Send it as `Authorization: Bearer <token>`.",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "ops",
+      "description": "Liveness. Unauthenticated and exempt from rate limiting."
+    },
+    {
+      "name": "auth",
+      "description": "Google sign-in. Exchanges an OAuth code for our own JWT."
+    },
+    {
+      "name": "profile",
+      "description": "The user's timezone and questionnaire answers."
+    },
+    {
+      "name": "imports",
+      "description": "Bringing context in. Files go up through a presigned URL and are parsed on the queue; a connected Google Calendar can be pulled directly."
+    },
+    {
+      "name": "integrations",
+      "description": "OAuth connections. Sign-in and calendar access are separate grants — the app never sees a Google token, only our JWT."
+    },
+    {
+      "name": "files",
+      "description": "Presigned upload and download for the local storage backend. Authorised by the signature in the URL, not by a JWT."
+    },
+    {
+      "name": "plan-sessions",
+      "description": "Turning a goal into plans: create a session, answer at most two rounds of follow-up questions, receive three difficulty variants."
+    },
+    {
+      "name": "plans",
+      "description": "Everything after generation: lifecycle, the built-in todo, daily check-ins, revisions, and export to Google Calendar or Markdown."
+    },
+    {
+      "name": "jobs",
+      "description": "Status of queued work."
+    },
+    {
+      "name": "role-models",
+      "description": "Trait and persona role models. Reads are open to signed-in users; writes are team-only and authenticate with `X-API-Key`."
+    }
+  ],
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8000",
+      "description": "Local development"
+    }
+  ]
+}

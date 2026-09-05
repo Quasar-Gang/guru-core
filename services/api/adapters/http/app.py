@@ -32,7 +32,87 @@ from services.api.domain.errors import (
 if TYPE_CHECKING:  # pragma: no cover - typing only; avoids a container <-> adapters import cycle
     from services.api.container import ApiContainer
 
-__all__ = ["API_PREFIX", "STATUS_BY_ERROR", "create_app", "error_code"]
+__all__ = [
+    "API_DESCRIPTION",
+    "API_PREFIX",
+    "OPENAPI_TAGS",
+    "STATUS_BY_ERROR",
+    "create_app",
+    "error_code",
+]
+
+#: Shown at the top of /docs and carried in the exported OpenAPI document.
+API_DESCRIPTION = """
+The single endpoint the app talks to. A user states a goal; the service collects
+whatever context exists, asks follow-up questions when something essential is missing,
+and produces three difficulty variants of a scheduled plan.
+
+**Authentication.** Every endpoint except `POST /v1/auth/google`, `GET /health` and the
+presigned `/v1/files/*` routes needs `Authorization: Bearer <jwt>`. Get the token from
+`POST /v1/auth/google`; it carries the user id and expires after `JWT_TTL_SECONDS`.
+The team-facing `role-models` writes authenticate with `X-API-Key` instead.
+
+**Long-running work.** Plan generation, import parsing and calendar export run on a
+queue, so the endpoints that start them return `202` with an id. Poll the resource
+(`GET /v1/plan-sessions/{id}`, `GET /v1/imports`) rather than expecting a synchronous
+result — PostgreSQL is the source of truth for job state, Redis only caches it.
+
+**Errors.** Every failure returns the same envelope:
+`{"error": {"code": "not_found", "message": "..."}}`. The code is the snake_case name of
+the domain error: `invalid_input` (422), `unauthorized` (401), `forbidden` (403),
+`not_found` (404), `conflict` (409), `reauth_required` (409), `rate_limited` (429).
+"""
+
+#: One entry per tag, in the order they should appear in the docs.
+OPENAPI_TAGS = [
+    {"name": "ops", "description": "Liveness. Unauthenticated and exempt from rate limiting."},
+    {"name": "auth", "description": "Google sign-in. Exchanges an OAuth code for our own JWT."},
+    {"name": "profile", "description": "The user's timezone and questionnaire answers."},
+    {
+        "name": "imports",
+        "description": (
+            "Bringing context in. Files go up through a presigned URL and are parsed on "
+            "the queue; a connected Google Calendar can be pulled directly."
+        ),
+    },
+    {
+        "name": "integrations",
+        "description": (
+            "OAuth connections. Sign-in and calendar access are separate grants — the app "
+            "never sees a Google token, only our JWT."
+        ),
+    },
+    {
+        "name": "files",
+        "description": (
+            "Presigned upload and download for the local storage backend. Authorised by the "
+            "signature in the URL, not by a JWT."
+        ),
+    },
+    {
+        "name": "plan-sessions",
+        "description": (
+            "Turning a goal into plans: create a session, answer at most two rounds of "
+            "follow-up questions, receive three difficulty variants."
+        ),
+    },
+    {
+        "name": "plans",
+        "description": (
+            "Everything after generation: lifecycle, the built-in todo, daily check-ins, "
+            "revisions, and export to Google Calendar or Markdown."
+        ),
+    },
+    {"name": "jobs", "description": "Status of queued work."},
+    {
+        "name": "role-models",
+        "description": (
+            "Trait and persona role models. Reads are open to signed-in users; writes are "
+            "team-only and authenticate with `X-API-Key`."
+        ),
+    },
+]
+
 
 API_PREFIX = "/v1"
 
@@ -77,7 +157,14 @@ async def _validation_error_handler(request: Request, exc: Exception) -> JSONRes
 
 def create_app(container: ApiContainer) -> FastAPI:
     """Build the API service FastAPI app; every dependency comes from `container`."""
-    app = FastAPI(title="guru-core API", version="0.1.0")
+    app = FastAPI(
+        title="guru-core API",
+        version="0.1.0",
+        description=API_DESCRIPTION,
+        openapi_tags=OPENAPI_TAGS,
+        contact={"name": "Quasar-Gang", "url": "https://github.com/Quasar-Gang/guru-core"},
+        license_info={"name": "Proprietary — all rights reserved"},
+    )
     app.state.container = container
 
     if container.settings.rate_limit_per_minute > 0:
