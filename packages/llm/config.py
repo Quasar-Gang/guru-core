@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from packages.config import CONFIG_DIR, load_yaml_config
 from packages.llm.ports import Purpose
@@ -26,10 +26,35 @@ class ProviderConfig(BaseModel):
     max_context_tokens: int = 16000
     timeout_seconds: int = 180
 
+    #: In-process cap on simultaneous requests to this provider. A local runtime holds
+    #: one set of weights and one KV cache, so two concurrent generations compete for
+    #: the same unified memory; 1 keeps a laptop demo predictable. 0 means no cap,
+    #: which is what a hosted provider wants. The limit is per process, so N workers
+    #: still make N requests — that is deliberate, since the queue is where
+    #: cross-process backpressure belongs.
+    concurrency: int = 0
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def _blank_base_url_is_none(cls, value: object) -> object:
+        return None if value == "" else value
+
 
 class PurposeParams(BaseModel):
     temperature: float
     max_output_tokens: int
+
+    #: Sent only when set, because the accepted values are provider-specific: Ollama
+    #: and gpt-oss read "none"/"low"/"medium"/"high", Anthropic has no such field at
+    #: all. Leave it unset — or set the env var to empty — and no adapter sends it,
+    #: so switching to a cloud provider needs no edit here.
+    reasoning_effort: str | None = None
+
+    @field_validator("reasoning_effort", mode="before")
+    @classmethod
+    def _blank_is_unset(cls, value: object) -> object:
+        """An env var expanded to an empty string means "do not send it"."""
+        return None if value == "" else value
 
 
 class RetryConfig(BaseModel):

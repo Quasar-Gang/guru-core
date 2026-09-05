@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from packages.llm.concurrency import ConcurrencyGate
 from packages.llm.config import LLMConfig
 from packages.llm.observability import LlmCallLog
 from packages.llm.ports import (
@@ -46,6 +47,7 @@ class OpenAICompatLLM:
         self._observer = observer
         self._transport = transport
         self._url = f"{provider.base_url.rstrip('/')}/chat/completions"
+        self._gate = ConcurrencyGate(provider.concurrency)
 
     async def complete(
         self,
@@ -75,8 +77,11 @@ class OpenAICompatLLM:
                 {"role": "user", "content": user},
             ],
             "temperature": params.temperature,
+            # The port calls it max_output_tokens; the wire field is max_tokens.
             "max_tokens": params.max_output_tokens,
         }
+        if params.reasoning_effort is not None:
+            body["reasoning_effort"] = params.reasoning_effort
         if mode == "guided_json":
             body["extra_body"] = {"guided_json": schema}
         elif mode == "json_schema":
@@ -98,7 +103,8 @@ class OpenAICompatLLM:
             body["tool_choice"] = {"type": "function", "function": {"name": _TOOL_NAME}}
 
         started = time.perf_counter()
-        payload = await self._post(body)
+        async with self._gate.hold():
+            payload = await self._post(body)
         latency_ms = int((time.perf_counter() - started) * 1000)
 
         usage = payload.get("usage") or {}

@@ -129,15 +129,29 @@ application code.
 
 <br>
 
-| Setup | `LLM_ADAPTER` | `LLM_BASE_URL` | `structured_output` |
-|---|---|---|---|
-| Tests and development | `fake` | — | — |
-| Local vLLM | `openai_compat` | `http://localhost:8000/v1` | `guided_json` |
-| Local Ollama | `openai_compat` | `http://localhost:11434/v1` | `json_schema` |
-| Claude | `anthropic` | — | `tool_use` |
+Every field in `config/llm.yaml` is an environment variable with a default, so moving
+between a laptop and a hosted API never touches the file or any use case.
+
+| Setup | `LLM_ADAPTER` | `LLM_BASE_URL` | `LLM_STRUCTURED_OUTPUT` | `LLM_CONCURRENCY` | `LLM_REASONING_EFFORT` |
+|---|---|---|---|---|---|
+| Tests and development | `fake` | — | — | — | — |
+| Local Ollama *(default)* | `openai_compat` | `http://127.0.0.1:11434/v1` | `json_schema` | `1` | `none` |
+| Local vLLM | `openai_compat` | `http://localhost:8000/v1` | `guided_json` | `1` | *(blank)* |
+| Claude | `anthropic` | *(blank)* | `tool_use` | `0` | *(blank)* |
+
+Two fields exist because a local runtime and a hosted API want opposite things:
+
+- **`LLM_CONCURRENCY`** caps simultaneous requests per process. A local runtime holds one
+  set of weights and one KV cache, so two generations contend for the same memory; `1`
+  keeps a laptop predictable. Set `0` for a hosted provider, which has no such limit.
+- **`LLM_REASONING_EFFORT`** is only sent when non-empty, because the accepted values are
+  provider-specific and Anthropic has no such field. Leave it blank on a provider that
+  does not take it — the Anthropic adapter never sends it regardless.
 
 The whole system makes exactly four kinds of LLM call — evaluate readiness, generate a
 plan, revise a plan, recommend a role model. Everything else is deterministic code.
+The local model baseline and the acceptance gates a replacement must clear are in
+[`docs/research/local-llm-evaluation.md`](docs/research/local-llm-evaluation.md).
 
 </details>
 

@@ -1,24 +1,50 @@
-# One provider, not a provider list. To switch model or service, change these values.
+# One provider, not a provider list. Every value below is an environment variable
+# with a default, so switching between a local runtime and a hosted API is a change
+# of environment, never a change of this file or of any use case.
+#
+# The defaults describe the local demo baseline (Ollama + qwen3.5:9b, see
+# docs/research/local-llm-evaluation.md). Tests override LLM_ADAPTER to "fake".
 provider:
-  adapter: ${LLM_ADAPTER:-fake}      # openai_compat | anthropic | fake
-  base_url: ${LLM_BASE_URL:-http://127.0.0.1:8000/v1}
-  api_key: ${LLM_API_KEY:-dummy}
-  model: ${LLM_MODEL:-local-model}
-  structured_output: guided_json     # guided_json | json_schema | tool_use | prompt
-  max_context_tokens: ${LLM_MAX_CONTEXT:-16000}
-  timeout_seconds: 180
+  adapter: ${LLM_ADAPTER:-fake}                              # openai_compat | anthropic | fake
+  base_url: ${LLM_BASE_URL:-http://127.0.0.1:11434/v1}
+  api_key: ${LLM_API_KEY:-ollama}
+  model: ${LLM_MODEL:-qwen3.5:9b}
+  structured_output: ${LLM_STRUCTURED_OUTPUT:-json_schema}   # guided_json | json_schema | tool_use | prompt
+  max_context_tokens: ${LLM_MAX_CONTEXT:-16384}
+  timeout_seconds: ${LLM_TIMEOUT:-240}
+  # 1 for a local runtime that holds one KV cache; set 0 for a hosted provider,
+  # which has no reason to serialise our requests.
+  concurrency: ${LLM_CONCURRENCY:-1}
 
-params:                              # Per-purpose parameters, independent of the provider
-  evaluate:  {temperature: 0.2, max_output_tokens: 1500}
-  generate:  {temperature: 0.4, max_output_tokens: 4000}
-  revise:    {temperature: 0.3, max_output_tokens: 3000}
-  recommend: {temperature: 0.3, max_output_tokens: 800}
+# Per-purpose parameters, independent of the provider.
+# reasoning_effort is provider-specific and is only sent when non-empty: set
+# LLM_REASONING_EFFORT= (blank) when moving to a provider that does not accept it.
+params:
+  evaluate:
+    temperature: 0.2
+    max_output_tokens: 1500
+    reasoning_effort: ${LLM_REASONING_EFFORT:-none}
+  generate:
+    temperature: 0.4
+    max_output_tokens: 4000
+    reasoning_effort: ${LLM_REASONING_EFFORT:-none}
+  revise:
+    temperature: 0.3
+    max_output_tokens: 3000
+    reasoning_effort: ${LLM_REASONING_EFFORT:-none}
+  recommend:
+    temperature: 0.3
+    max_output_tokens: 800
+    reasoning_effort: ${LLM_REASONING_EFFORT:-none}
 
-budgets:                             # Role model context budget in tokens (PRD 12.6)
+# Role model context budget in tokens (PRD 12.6). Raise these together with
+# max_context_tokens when moving to a model with more room.
+budgets:
   evaluate: 100
   generate: 300
   revise: 200
   recommend: 600
 
 retry:
-  max_attempts: 3                    # Retries when schema or business-rule validation fails, feeding the errors back
+  # Retries when schema or business-rule validation fails, feeding the errors back.
+  max_attempts: 3

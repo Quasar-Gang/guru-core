@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from packages.llm.concurrency import ConcurrencyGate
 from packages.llm.config import LLMConfig
 from packages.llm.observability import LlmCallLog
 from packages.llm.ports import (
@@ -41,6 +42,9 @@ class AnthropicLLM:
         self._transport = transport
         base_url = config.provider.base_url or _DEFAULT_BASE_URL
         self._url = f"{base_url.rstrip('/')}/v1/messages"
+        # Honoured for symmetry — a hosted provider normally leaves it at 0, but the
+        # same knob works if you ever need to rate-limit yourself.
+        self._gate = ConcurrencyGate(config.provider.concurrency)
 
     async def complete(
         self,
@@ -69,8 +73,12 @@ class AnthropicLLM:
             "tool_choice": {"type": "tool", "name": _TOOL_NAME},
         }
 
+        # reasoning_effort is deliberately not sent: it is an OpenAI-style field with
+        # no Anthropic equivalent, so a config tuned for a local runtime stays valid
+        # here without edits.
         started = time.perf_counter()
-        payload = await self._post(body)
+        async with self._gate.hold():
+            payload = await self._post(body)
         latency_ms = int((time.perf_counter() - started) * 1000)
 
         usage = payload.get("usage") or {}
