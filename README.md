@@ -16,7 +16,7 @@ checked off day by day, and revisable when you fall behind.
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io/)
 [![mypy](https://img.shields.io/badge/mypy-strict-2A6DB2)](https://mypy-lang.org/)
 [![ruff](https://img.shields.io/badge/lint-ruff-D7FF64?logo=ruff&logoColor=black)](https://docs.astral.sh/ruff/)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+[![License](https://img.shields.io/badge/license-proprietary-A31515)](LICENSE)
 
 [Specification](guru-core-PRD.md) · [Engineering rules](CONTRIBUTING.md) · [Quick start](#quick-start)
 
@@ -239,4 +239,11 @@ readiness metrics, role model seeds, fixtures — keep their original language. 
 
 ## License
 
-[Apache 2.0](LICENSE)
+Proprietary. Copyright (c) 2026 Quasar-Gang, all rights reserved — see
+[`LICENSE`](LICENSE). No licence to use, copy, modify or distribute this software
+is granted without written permission.
+
+Third-party dependencies keep their own licences. Model weights used with this
+software are governed by their providers' terms; the study in
+[`docs/research/local-llm-evaluation.md`](docs/research/local-llm-evaluation.md)
+section 3 covers which of them are permissive and which carry use policies.

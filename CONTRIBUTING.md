@@ -1,4 +1,7 @@
-# Contributing to guru-core
+# Working on guru-core
+
+Internal engineering handbook. guru-core is proprietary — see [`LICENSE`](LICENSE);
+this document is for people already working on it, not an invitation to contribute.
 
 ## Local infrastructure
 
