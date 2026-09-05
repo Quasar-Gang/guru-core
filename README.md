@@ -201,17 +201,20 @@ All four diagrams are SVGs with an explicit white canvas, so they look the same 
 light and dark mode — mermaid's own output is transparent and would otherwise pick up
 the reader's page colour.
 
-Three of them are generated from `.mmd` sources in [`docs/diagrams/`](docs/diagrams/).
-After editing one, regenerate with:
+The first two — the flow and the architecture — are hand-drawn SVGs, because each
+carries a layer of meaning a flowchart cannot: the runway bars encode 15/12/10 weeks so
+the trade-off between the three plans is visible, and the port boundary is drawn as a
+boundary, with the fakes that make it worth having listed underneath. Edit those files
+directly.
+
+The other two are generated from `.mmd` sources in [`docs/diagrams/`](docs/diagrams/):
 
 ```bash
 uv run python scripts/render_diagrams.py   # opens a browser, writes docs/assets/*.svg
 ```
 
-The first one, `flow-goal-to-plan.svg`, is hand-drawn and has no `.mmd` source — the
-gradients, the runway bars encoding 15/12/10 weeks, and the converging optional inputs
-are past what mermaid can express. Edit that file directly; the generator skips it
-because nothing in `docs/diagrams/` matches its name.
+The generator only rebuilds SVGs whose name matches a `.mmd`, so it leaves the
+hand-drawn pair alone.
 
 ## Repository layout
 
