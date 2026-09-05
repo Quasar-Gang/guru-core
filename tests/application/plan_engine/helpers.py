@@ -12,9 +12,8 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from services.plan_engine.container import PlanEngineContainer
-
 from packages.llm.ports import LLMError, OutputT, Purpose
+from services.plan_engine.container import PlanEngineContainer
 
 FIXTURES_DIR = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "llm"
 

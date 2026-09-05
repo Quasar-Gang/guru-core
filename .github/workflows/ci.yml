@@ -56,7 +56,7 @@ jobs:
 
       # The four gates of PRD 9.5, run separately so a failure names itself.
       - name: Lint
-        run: uv run ruff check . && uv run ruff format --check .
+        run: uv run ruff check --no-cache . && uv run ruff format --check .
 
       - name: Types
         run: uv run mypy .
