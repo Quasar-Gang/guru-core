@@ -9,13 +9,13 @@ follow-up questions only where something essential is missing, and produces thre
 difficulty variants of a scheduled plan — exportable to Google Calendar or Markdown,
 checked off day by day, and revisable when you fall behind.
 
+[![CI](https://github.com/Quasar-Gang/guru-core/actions/workflows/ci.yml/badge.svg)](https://github.com/Quasar-Gang/guru-core/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-async-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io/)
 [![mypy](https://img.shields.io/badge/mypy-strict-2A6DB2)](https://mypy-lang.org/)
 [![ruff](https://img.shields.io/badge/lint-ruff-D7FF64?logo=ruff&logoColor=black)](https://docs.astral.sh/ruff/)
-[![tests](https://img.shields.io/badge/tests-704%20passing-3FB950)](#testing)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
 
 [Specification](guru-core-PRD.md) · [Engineering rules](CONTRIBUTING.md) · [Quick start](#quick-start)
@@ -307,12 +307,15 @@ make integration    # integration tests against a live PostgreSQL
 bash scripts/smoke.sh
 ```
 
-| Suite | Count | Needs |
+| Suite | Needs | Runs in CI |
 |---|---|---|
-| Unit — domain, packages | ~450 | nothing |
-| Application — use cases through fakes | ~250 | nothing |
-| Integration — Postgres repos | 31 | PostgreSQL |
-| Smoke — end to end over HTTP | 1 script | the full stack |
+| Unit — domain, packages | nothing | ✅ |
+| Application — use cases through fakes | nothing | ✅ |
+| Integration — Postgres repos | PostgreSQL | ✅ |
+| Smoke — end to end over HTTP | the full stack | manual |
+
+Every push runs lint, `mypy --strict`, the import contracts, both test suites and
+`alembic check` against a real PostgreSQL — see [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 The heaviest coverage sits on the deterministic core: the scheduler, difficulty
 derivation, the revision diff, and the state machines. That is where regressions would

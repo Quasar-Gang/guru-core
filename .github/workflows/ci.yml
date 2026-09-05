@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push supersedes an in-flight run on the same branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/guru_core
+  REDIS_URL: redis://127.0.0.1:6379/0
+
+jobs:
+  check:
+    name: lint · types · imports · tests
+    runs-on: ubuntu-latest
+
+    # PRD 9.5 runs the unit and application suites without Docker; these are here for
+    # `alembic check` and the integration suite, which do need real services.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: guru_core
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d guru_core"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      # The four gates of PRD 9.5, run separately so a failure names itself.
+      - name: Lint
+        run: uv run ruff check . && uv run ruff format --check .
+
+      - name: Types
+        run: uv run mypy .
+
+      - name: Import boundaries
+        run: uv run lint-imports
+
+      - name: Tests
+        run: uv run pytest
+
+      - name: Migrations match the models
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+
+      - name: Integration tests
+        run: uv run pytest -m integration
