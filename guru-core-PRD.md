@@ -6,7 +6,7 @@
 | Repo | github.com/Quasar-Gang/guru-core |
 | 版本 | v0.1 MVP |
 | 日期 | 2026-09-05 |
-| 狀態 | v0.2 Draft（待決事項僅剩託管平台與本地模型選型） |
+| 狀態 | v0.2 Draft（待決事項僅剩託管平台；本地模型已完成 demo 選型） |
 
 ---
 
@@ -868,9 +868,9 @@ Base：`/v1`，全部需 `Authorization: Bearer <JWT>`（除 auth）。
 | Cache | Redis 7 | 任務狀態、LLM 回應快取、rate limit |
 | MQ | ARQ（Redis 上） | 輕量、原生 asyncio；已抽成 `QueuePort`，日後可換 NATS / RabbitMQ |
 | 物件儲存 | Cloudflare R2（S3 API，boto3） | 已抽成 `StoragePort` |
-| LLM | 本地開源模型為預設，雲端可切換（經 `llm` 套件） | 已抽成 `LLMPort`；改 `config/llm.yaml` 的 provider 設定即可換模型或服務，見第 7 節 |
+| LLM | 本地 `Qwen3.5 9B`（Ollama `qwen3.5:9b` Q4_K_M）為 demo 預設，雲端可切換（經 `llm` 套件） | Apache-2.0、繁中與結構化輸出方向最匹配；已通單一 smoke test，完整 MVP 品質仍須過第 7.9 節 eval gate。24 GB Apple Silicon 可運行並保留服務餘裕，詳見 `docs/research/local-llm-evaluation.md` |
 | 型別與品質 | Pydantic v2、mypy --strict、ruff、import-linter | 見紀律 |
-| 本地推論 | 任一 OpenAI 相容服務（vLLM / Ollama / LM Studio） | 模型之後再定；只要端點相容就不用改程式 |
+| 本地推論 | Ollama（demo）；正式 Linux GPU 部署再評估 vLLM / SGLang | Ollama 在 Apple Silicon 架設成本最低且提供 OpenAI 相容端點與 JSON schema；`OpenAICompatLLM` 不綁死 runtime |
 | 測試 | pytest、每個 port 的 Fake 實作 | 單元測試不起 Docker |
 | 託管 | **後續討論** | — |
 
@@ -880,7 +880,7 @@ Base：`/v1`，全部需 `Authorization: Bearer <JWT>`（除 auth）。
 
 ### 7.1 目標
 
-本地開源模型與雲端 API 之間**改設定就能切換，程式碼不動**。MVP 先跑本地，具體模型之後再選。設定裡只有一個 provider——要換就改它的值，不是在檔案裡並存多個然後路由。
+本地開放權重模型與雲端 API 之間**改設定就能切換，程式碼不動**。MVP demo 固定以 Ollama `qwen3.5:9b` 驗證；模型比較、硬體估算與升級門檻見 `docs/research/local-llm-evaluation.md`，一鍵架設見 `docs/local-llm-quickstart.md`。設定裡只有一個 provider——要換就改它的值，不是在檔案裡並存多個然後路由。
 
 ### 7.2 統一介面
 
@@ -915,18 +915,19 @@ class LLMPort(Protocol):
 # config/llm.yaml
 provider:
   adapter: openai_compat             # openai_compat | anthropic
-  base_url: ${LLM_BASE_URL}          # 本地：http://localhost:8000/v1
-  api_key: ${LLM_API_KEY:-dummy}
-  model: ${LLM_MODEL}
-  structured_output: guided_json     # guided_json | json_schema | tool_use | prompt
-  max_context_tokens: ${LLM_MAX_CONTEXT:-16000}
-  timeout_seconds: 180
+  base_url: ${LLM_BASE_URL:-http://127.0.0.1:11434/v1}
+  api_key: ${LLM_API_KEY:-ollama}
+  model: ${LLM_MODEL:-qwen3.5:9b}
+  structured_output: json_schema     # guided_json | json_schema | tool_use | prompt
+  max_context_tokens: ${LLM_MAX_CONTEXT:-16384}
+  timeout_seconds: 240
+  concurrency: 1                      # 本機 demo；避免 unified memory 內同時載入多份 KV cache
 
 params:                              # 每種用途的參數，與 provider 無關
-  evaluate:  {temperature: 0.2, max_output_tokens: 1500}
-  generate:  {temperature: 0.4, max_output_tokens: 4000}
-  revise:    {temperature: 0.3, max_output_tokens: 3000}
-  recommend: {temperature: 0.3, max_output_tokens: 800}
+  evaluate:  {temperature: 0.2, max_output_tokens: 1500, reasoning_effort: none}
+  generate:  {temperature: 0.4, max_output_tokens: 4000, reasoning_effort: none}
+  revise:    {temperature: 0.3, max_output_tokens: 3000, reasoning_effort: none}
+  recommend: {temperature: 0.3, max_output_tokens: 800,  reasoning_effort: none}
 
 budgets:                             # role model context 預算（見 12.6 渲染器）
   evaluate: 100
@@ -943,10 +944,12 @@ retry:
 | 情境 | `LLM_BASE_URL` | `adapter` | `structured_output` |
 |---|---|---|---|
 | 本地 vLLM | `http://localhost:8000/v1` | `openai_compat` | `guided_json` |
-| 本地 Ollama | `http://localhost:11434/v1` | `openai_compat` | `json_schema` |
+| 本地 Ollama（demo 預設） | `http://127.0.0.1:11434/v1` | `openai_compat` | `json_schema` |
 | Claude | — | `anthropic` | `tool_use` |
 
 `budgets` 跟著 `max_context_tokens` 走：換到 context 更大的模型時把 budgets 一起調大，這兩個值本來就該一起改，放在同一份設定裡不會忘。
+
+Ollama 啟動時另設 `OLLAMA_CONTEXT_LENGTH=16384`；只改 client 設定不會配置 server 的 KV cache。`OpenAICompatLLM` 對 Chat Completions 的實際 mapping 為：內部 `max_output_tokens` → wire `max_tokens`；`json_schema` → `response_format: {type: "json_schema", json_schema: {name, strict: true, schema}}`。Adapter contract test 必須斷言 wire payload，不能只檢查最終文字可解析。
 
 ### 7.5 可靠性：驗證 → 修正 → 降級
 
@@ -990,6 +993,13 @@ flowchart LR
 ### 7.8 觀測
 
 每次呼叫記錄：`prompt_name`、`prompt_version`、`provider`、`model`、`purpose`、input / output tokens、耗時、重試次數、是否降級。這是之後判斷「哪幾條路值得切到雲端」的唯一依據，M0 就要有。
+
+### 7.9 Context、併發與模型驗收
+
+- 16,384 是 input 與 output 的共同上限。組 prompt 時先保留該 purpose 的 `max_output_tokens` 與 chat template buffer，再按「必要 profile / 使用者回答 → schema / 規則 →近期 Calendar → 文件 chunks → role model 補充」排序裁切；禁止依賴 runtime 靜默截斷。
+- 本機 demo 的 LLM worker concurrency 固定為 1；queue 端做 backpressure，timeout / retry 不可讓同一請求的多次 generation 重疊執行。
+- 換模型前要跑四種 production schema 的固定 eval set；分別記錄 JSON parse、Pydantic、業務規則、繁中可讀性、非法 candidate ID、延遲與 fallback rate。建議 gate 與測法見 `docs/research/local-llm-evaluation.md` 第 9 節。
+- Pin runtime 版本、model tag 與解析後 digest。權重授權獨立審查；runtime 的 MIT 授權不代表下載模型也是 OSI open source。
 
 ---
 
@@ -1598,5 +1608,5 @@ content:
 ## 15. 待決事項
 
 - 託管平台（後續討論）
-- 本地推論的模型與框架（之後決定；`config/llm.yaml` 已預留，不影響開發進度）
+- 本地推論已選定 Ollama + `qwen3.5:9b` 作 demo baseline；正式部署 runtime 與模型仍由實際流量、品質 eval 與 GPU 預算決定
 - v0.2 候選（皆已從 MVP 移除）：Calendar 變化偵測、每日自動修訂、`compress` 策略、role model 排序層
