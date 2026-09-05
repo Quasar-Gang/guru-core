@@ -25,7 +25,7 @@ async def _main() -> None:
     prompts = PromptRegistry(ROOT / "packages" / "llm" / "prompts")
     llm = build_llm(config, prompts, _Collector(), ROOT / "tests" / "fixtures" / "llm")
     started = time.monotonic()
-    out = await llm.complete("smoke", {"goal": "run 5k"}, SmokeOut, Purpose.evaluate)
+    out = await llm.complete("smoke", {"goal": "run 5k"}, SmokeOut, Purpose.analyze)
     print(
         f"adapter={config.provider.adapter} model={config.provider.model} "
         f"elapsed={time.monotonic() - started:.2f}s output={out.model_dump_json()}"

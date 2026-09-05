@@ -3,7 +3,7 @@
 One JSON object per line on stdout, so a log shipper needs no parser. Every
 record carries the service name; records emitted inside a job also carry its
 `job_id`, which is how a single job is followed across the queue boundary
-(PRD section 10).
+for every service.
 """
 
 from __future__ import annotations

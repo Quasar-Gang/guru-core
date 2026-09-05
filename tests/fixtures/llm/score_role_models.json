@@ -1,0 +1,318 @@
+{
+  "recommendation": {
+    "verdicts": [
+      {
+        "role_model_code": "S-1",
+        "fit": "strongly_consistent",
+        "verdict": "What S-1 looks like against this behaviour, stated plainly.",
+        "note": "What the finding means, and what it does not mean.",
+        "evidence": [
+          {
+            "stance": "for",
+            "text": "Evidence 1 for S-1, taken from the reports.",
+            "cites": {
+              "dimension": "work",
+              "fact": "the work column over the window"
+            }
+          },
+          {
+            "stance": "against",
+            "text": "Evidence 2 for S-1, taken from the reports.",
+            "cites": {
+              "dimension": "learning",
+              "fact": "the learning column over the window"
+            }
+          },
+          {
+            "stance": "for",
+            "text": "Evidence 3 for S-1, taken from the reports.",
+            "cites": {
+              "dimension": "unclassified",
+              "fact": "the unclassified column over the window"
+            }
+          },
+          {
+            "stance": "against",
+            "text": "Evidence 4 for S-1, taken from the reports.",
+            "cites": {
+              "dimension": "social",
+              "fact": "the social column over the window"
+            }
+          },
+          {
+            "stance": "for",
+            "text": "Evidence 5 for S-1, taken from the reports.",
+            "cites": {
+              "dimension": "capacity",
+              "fact": "the capacity column over the window"
+            }
+          }
+        ],
+        "probe": {
+          "statement": "The one cheap thing that would test S-1 this quarter.",
+          "cost": "Once this quarter, about three evenings; failing costs nothing else."
+        }
+      },
+      {
+        "role_model_code": "S-2",
+        "fit": "partly_consistent",
+        "verdict": "What S-2 looks like against this behaviour, stated plainly.",
+        "note": "What the finding means, and what it does not mean.",
+        "evidence": [
+          {
+            "stance": "for",
+            "text": "Evidence 1 for S-2, taken from the reports.",
+            "cites": {
+              "dimension": "work",
+              "fact": "the work column over the window"
+            }
+          },
+          {
+            "stance": "against",
+            "text": "Evidence 2 for S-2, taken from the reports.",
+            "cites": {
+              "dimension": "learning",
+              "fact": "the learning column over the window"
+            }
+          },
+          {
+            "stance": "for",
+            "text": "Evidence 3 for S-2, taken from the reports.",
+            "cites": {
+              "dimension": "unclassified",
+              "fact": "the unclassified column over the window"
+            }
+          },
+          {
+            "stance": "against",
+            "text": "Evidence 4 for S-2, taken from the reports.",
+            "cites": {
+              "dimension": "social",
+              "fact": "the social column over the window"
+            }
+          },
+          {
+            "stance": "for",
+            "text": "Evidence 5 for S-2, taken from the reports.",
+            "cites": {
+              "dimension": "capacity",
+              "fact": "the capacity column over the window"
+            }
+          }
+        ],
+        "probe": {
+          "statement": "The one cheap thing that would test S-2 this quarter.",
+          "cost": "Once this quarter, about three evenings; failing costs nothing else."
+        }
+      },
+      {
+        "role_model_code": "S-3",
+        "fit": "moderate_gap",
+        "verdict": "What S-3 looks like against this behaviour, stated plainly.",
+        "note": "What the finding means, and what it does not mean.",
+        "evidence": [
+          {
+            "stance": "for",
+            "text": "Evidence 1 for S-3, taken from the reports.",
+            "cites": {
+              "dimension": "work",
+              "fact": "the work column over the window"
+            }
+          },
+          {
+            "stance": "against",
+            "text": "Evidence 2 for S-3, taken from the reports.",
+            "cites": {
+              "dimension": "learning",
+              "fact": "the learning column over the window"
+            }
+          },
+          {
+            "stance": "for",
+            "text": "Evidence 3 for S-3, taken from the reports.",
+            "cites": {
+              "dimension": "unclassified",
+              "fact": "the unclassified column over the window"
+            }
+          },
+          {
+            "stance": "against",
+            "text": "Evidence 4 for S-3, taken from the reports.",
+            "cites": {
+              "dimension": "social",
+              "fact": "the social column over the window"
+            }
+          },
+          {
+            "stance": "for",
+            "text": "Evidence 5 for S-3, taken from the reports.",
+            "cites": {
+              "dimension": "capacity",
+              "fact": "the capacity column over the window"
+            }
+          }
+        ],
+        "probe": {
+          "statement": "The one cheap thing that would test S-3 this quarter.",
+          "cost": "Once this quarter, about three evenings; failing costs nothing else."
+        }
+      },
+      {
+        "role_model_code": "S-4",
+        "fit": "large_gap",
+        "verdict": "What S-4 looks like against this behaviour, stated plainly.",
+        "note": "What the finding means, and what it does not mean.",
+        "evidence": [
+          {
+            "stance": "for",
+            "text": "Evidence 1 for S-4, taken from the reports.",
+            "cites": {
+              "dimension": "work",
+              "fact": "the work column over the window"
+            }
+          },
+          {
+            "stance": "against",
+            "text": "Evidence 2 for S-4, taken from the reports.",
+            "cites": {
+              "dimension": "learning",
+              "fact": "the learning column over the window"
+            }
+          },
+          {
+            "stance": "for",
+            "text": "Evidence 3 for S-4, taken from the reports.",
+            "cites": {
+              "dimension": "unclassified",
+              "fact": "the unclassified column over the window"
+            }
+          },
+          {
+            "stance": "against",
+            "text": "Evidence 4 for S-4, taken from the reports.",
+            "cites": {
+              "dimension": "social",
+              "fact": "the social column over the window"
+            }
+          },
+          {
+            "stance": "for",
+            "text": "Evidence 5 for S-4, taken from the reports.",
+            "cites": {
+              "dimension": "capacity",
+              "fact": "the capacity column over the window"
+            }
+          }
+        ],
+        "probe": {
+          "statement": "The one cheap thing that would test S-4 this quarter.",
+          "cost": "Once this quarter, about three evenings; failing costs nothing else."
+        }
+      },
+      {
+        "role_model_code": "S-5",
+        "fit": "largest_gap",
+        "verdict": "What S-5 looks like against this behaviour, stated plainly.",
+        "note": "What the finding means, and what it does not mean.",
+        "evidence": [
+          {
+            "stance": "for",
+            "text": "Evidence 1 for S-5, taken from the reports.",
+            "cites": {
+              "dimension": "work",
+              "fact": "the work column over the window"
+            }
+          },
+          {
+            "stance": "against",
+            "text": "Evidence 2 for S-5, taken from the reports.",
+            "cites": {
+              "dimension": "learning",
+              "fact": "the learning column over the window"
+            }
+          },
+          {
+            "stance": "for",
+            "text": "Evidence 3 for S-5, taken from the reports.",
+            "cites": {
+              "dimension": "unclassified",
+              "fact": "the unclassified column over the window"
+            }
+          },
+          {
+            "stance": "against",
+            "text": "Evidence 4 for S-5, taken from the reports.",
+            "cites": {
+              "dimension": "social",
+              "fact": "the social column over the window"
+            }
+          },
+          {
+            "stance": "for",
+            "text": "Evidence 5 for S-5, taken from the reports.",
+            "cites": {
+              "dimension": "capacity",
+              "fact": "the capacity column over the window"
+            }
+          }
+        ],
+        "probe": {
+          "statement": "The one cheap thing that would test S-5 this quarter.",
+          "cost": "Once this quarter, about three evenings; failing costs nothing else."
+        }
+      },
+      {
+        "role_model_code": "S-6",
+        "fit": "runs_opposite",
+        "verdict": "What S-6 looks like against this behaviour, stated plainly.",
+        "note": "What the finding means, and what it does not mean.",
+        "evidence": [
+          {
+            "stance": "for",
+            "text": "Evidence 1 for S-6, taken from the reports.",
+            "cites": {
+              "dimension": "work",
+              "fact": "the work column over the window"
+            }
+          },
+          {
+            "stance": "against",
+            "text": "Evidence 2 for S-6, taken from the reports.",
+            "cites": {
+              "dimension": "learning",
+              "fact": "the learning column over the window"
+            }
+          },
+          {
+            "stance": "for",
+            "text": "Evidence 3 for S-6, taken from the reports.",
+            "cites": {
+              "dimension": "unclassified",
+              "fact": "the unclassified column over the window"
+            }
+          },
+          {
+            "stance": "against",
+            "text": "Evidence 4 for S-6, taken from the reports.",
+            "cites": {
+              "dimension": "social",
+              "fact": "the social column over the window"
+            }
+          },
+          {
+            "stance": "for",
+            "text": "Evidence 5 for S-6, taken from the reports.",
+            "cites": {
+              "dimension": "capacity",
+              "fact": "the capacity column over the window"
+            }
+          }
+        ],
+        "probe": {
+          "statement": "The one cheap thing that would test S-6 this quarter.",
+          "cost": "Once this quarter, about three evenings; failing costs nothing else."
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "signals": {
+    "timezone": "Asia/Taipei",
+    "events": [
+      {
+        "source_ref": "e0",
+        "dimension": "work"
+      },
+      {
+        "source_ref": "e1",
+        "dimension": "learning"
+      },
+      {
+        "source_ref": "e2",
+        "dimension": "social"
+      }
+    ],
+    "skills": [
+      {
+        "name": "user interviews",
+        "roles": 3
+      },
+      {
+        "name": "design systems",
+        "roles": 2
+      }
+    ],
+    "roles": [
+      {
+        "title": "Product Designer",
+        "field": "product design",
+        "months": 28,
+        "current": true
+      },
+      {
+        "title": "UX Designer",
+        "field": "product design",
+        "months": 19,
+        "current": false
+      }
+    ]
+  }
+}

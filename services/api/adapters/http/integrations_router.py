@@ -1,4 +1,4 @@
-"""Third-party connection endpoints: authorize, callback, list, disconnect (PRD 5)."""
+"""Third-party connection endpoints: authorize, callback, list, disconnect."""
 
 from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel

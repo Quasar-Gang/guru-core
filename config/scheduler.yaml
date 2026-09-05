@@ -1,4 +1,5 @@
-# System-level scheduling rules (PRD 4.3.2). Never chosen by the LLM.
+# System-level placement rules. Never chosen by the LLM — this is the arithmetic half of
+# the determinism line.
 default_start: next_monday      # next_monday | tomorrow
 min_gap_minutes: 30             # minimum gap between two scheduled tasks
 max_shift_days: 3               # how far a conflicting task may slide, never across the week

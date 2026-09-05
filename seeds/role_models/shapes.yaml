@@ -1,0 +1,66 @@
+# The six shipped Role Models.
+#
+# These are not occupations. They are shapes a life can take — the same job title can grow
+# into different shapes, and different job titles can be the same shape.
+#
+# Every template states its cost, and that is a hard rule rather than a convention: a
+# template with no stated trade-off turns the catalogue into a popularity contest, won by
+# whichever sounds best out loud. Users may author their own, and theirs must state a cost
+# too.
+#
+# All six fields here are properties of the template and are identical for every user.
+# Anything computed per user belongs to the Fit Verdict, never here.
+
+- code: S-1
+  name: The Deep Specialist
+  vision: Go very deep on one thing, and be known for it by your peers.
+  five_year_path: Become the person named when a specific problem comes up.
+  must_accumulate: Depth, and a public trace of the work.
+  cost: >-
+    Switching tracks gets expensive. The deeper you go, the harder a lateral move becomes.
+  tags: [shape:depth, area:career, horizon:years]
+
+- code: S-2
+  name: The Zero-to-One Builder
+  vision: Always be making something that did not exist before.
+  five_year_path: Lead three projects from nothing to something people use.
+  must_accumulate: Cross-functional communication, and speed to a working thing.
+  cost: >-
+    Little of it reaches maturity, and the resume looks jumpy to anyone reading it quickly.
+  tags: [shape:building, area:career, horizon:years]
+
+- code: S-3
+  name: The Independent Operator
+  vision: Set your own hours, and cover your own costs.
+  five_year_path: Monthly revenue covers living costs, with no single employer behind it.
+  must_accumulate: A sellable skill, pricing and negotiation, and client relationships.
+  cost: >-
+    Unstable income, no organisational leverage, and all of the admin is yours.
+  tags: [shape:independence, area:career, horizon:years]
+
+- code: S-4
+  name: The People Leader
+  vision: Multiply through other people instead of doing it yourself.
+  five_year_path: Build a team that runs without you.
+  must_accumulate: Judgement, saying things clearly, and the restraint not to do it yourself.
+  cost: >-
+    Your hands-on craft decays, and results become indirect and slower to see.
+  tags: [shape:leadership, area:career, horizon:years]
+
+- code: S-5
+  name: The Steady Anchor
+  vision: Predictable work, with the weight on relationships and health.
+  five_year_path: Keep work at a level you can hold, and put the slack back into life.
+  must_accumulate: Boundary-keeping, one sustainable relationship, one continuous physical practice.
+  cost: >-
+    The career ceiling arrives earlier, and income growth flattens.
+  tags: [shape:steadiness, area:health, horizon:decade]
+
+- code: S-6
+  name: The Cross-Domain Connector
+  vision: Stand between two or three fields and translate.
+  five_year_path: Credibility in two domains, earning at the seam between them.
+  must_accumulate: A real foundation in a second domain, plus writing or speaking.
+  cost: >-
+    Never the deepest in any one field, and a constant need to explain what you do.
+  tags: [shape:connecting, area:career, horizon:years]

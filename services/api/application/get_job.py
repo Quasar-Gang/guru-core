@@ -1,4 +1,4 @@
-"""Report the state of one background job (PRD 9.4)."""
+"""Report the state of one background job."""
 
 from pydantic import BaseModel
 
@@ -23,10 +23,11 @@ class JobView(BaseModel):
 class GetJob:
     """Cache first, queue second.
 
-    Redis is only ever a cache (global constraint 12 / PRD 9.4 rule 17): flushing it must
+    Redis is only ever a cache: flushing it must
     never lose a job, so a miss falls back to the queue's own record. When that has expired
     too, the answer is `unknown` — for the MVP the caller is expected to fall back to
-    `GET /plan-sessions/{id}`, whose authority is the `plan_sessions` row in PostgreSQL.
+    `GET /v1/direction/runs/latest` or `GET /v1/plans/{id}`, whose authority is the row in
+    PostgreSQL.
     """
 
     def __init__(self, cache: CachePort, queue: QueuePort) -> None:

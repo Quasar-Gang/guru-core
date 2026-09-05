@@ -1,0 +1,80 @@
+<!-- Hand-drawn, not generated. The line down the middle is the point: everything left of
+     it is judgement a model is asked for, everything right of it is arithmetic. Edit here. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 448" width="1200" height="448" role="img" aria-label="The determinism line. On the left, five things a model is asked to judge: classify events, write the reports, score the shapes, lay out the milestone tree, and narrate the review. On the right, everything computed in code: hours and shares, placing tasks on dates, applying the quota and its cut order, diffing two schedules, and the execution counts. A hypothesis is only falsifiable if the thing it predicted was computed the same way twice.">
+  <title>Where the model is allowed to think, and where it is not</title>
+
+  <defs>
+    <linearGradient id="jf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FDF4E4"/><stop offset="100%" stop-color="#FAE9CC"/>
+    </linearGradient>
+    <linearGradient id="cf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F2FBF7"/><stop offset="100%" stop-color="#DDF2E9"/>
+    </linearGradient>
+    <filter id="soft2" x="-30%" y="-40%" width="160%" height="200%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#2C2C2A" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+
+  <style>
+    .t  { font-family: ui-sans-serif, -apple-system, "Segoe UI", sans-serif; }
+    .hd { font-size: 19px; font-weight: 700; }
+    .sb { font-size: 13.5px; fill: #6E6E69; }
+    .it { font-size: 15px; fill: #2C2C2A; }
+    .mo { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; fill: #6E6E69; }
+    .rule { font-size: 14.5px; fill: #4A4A46; font-style: italic; }
+  </style>
+
+  <rect width="1200" height="448" fill="#FBFAF7"/>
+
+  <!-- judgement column -->
+  <g filter="url(#soft2)">
+    <rect x="48" y="44" width="500" height="330" rx="16" fill="url(#jf)" stroke="#BA7517" stroke-opacity="0.40"/>
+  </g>
+  <text class="t hd" x="76" y="82" fill="#8A5406">Judgement — a model call</text>
+  <text class="t sb" x="76" y="104">three purposes, and nothing else asks a model anything</text>
+
+  <g>
+    <text class="t it" x="76" y="144">Classify each event into a dimension</text>
+    <text class="t mo" x="76" y="163">analyze · build_profile</text>
+
+    <text class="t it" x="76" y="196">Say what the numbers mean, per dimension</text>
+    <text class="t mo" x="76" y="215">analyze · create_reports</text>
+
+    <text class="t it" x="76" y="248">Hold every shape against the evidence</text>
+    <text class="t mo" x="76" y="267">verdict · score_role_models</text>
+
+    <text class="t it" x="76" y="300">Lay out the milestone tree and its tasks</text>
+    <text class="t mo" x="76" y="319">generate · build_plan</text>
+
+    <text class="t it" x="76" y="352">Put the quarter's comparison into words</text>
+  </g>
+
+  <!-- the line -->
+  <path d="M 600 30 L 600 400" stroke="#443AA6" stroke-width="2.5" stroke-dasharray="7 6"/>
+  <text class="t sb" x="600" y="22" text-anchor="middle" fill="#443AA6">the determinism line</text>
+
+  <!-- arithmetic column -->
+  <g filter="url(#soft2)">
+    <rect x="652" y="44" width="500" height="330" rx="16" fill="url(#cf)" stroke="#1D9E75" stroke-opacity="0.40"/>
+  </g>
+  <text class="t hd" x="680" y="82" fill="#0F7A57">Arithmetic — code, always</text>
+  <text class="t sb" x="680" y="104">same inputs in, byte-identical output</text>
+
+  <g>
+    <text class="t it" x="680" y="144">Hours, shares, weeks present, streaks</text>
+    <text class="t mo" x="680" y="163">domain/profile.py</text>
+
+    <text class="t it" x="680" y="196">Placing every task on a real date</text>
+    <text class="t mo" x="680" y="215">domain/scheduler.py</text>
+
+    <text class="t it" x="680" y="248">The quota ceiling and its cut order</text>
+    <text class="t mo" x="680" y="267">domain/quota.py</text>
+
+    <text class="t it" x="680" y="300">Diffing two schedules, occurrence by occurrence</text>
+    <text class="t mo" x="680" y="319">domain/diff.py</text>
+
+    <text class="t it" x="680" y="352">Planned, done, missed — counted, never estimated</text>
+  </g>
+
+  <text class="t rule" x="600" y="424" text-anchor="middle">A hypothesis is only falsifiable if the thing it predicted was computed the same way twice.</text>
+</svg>

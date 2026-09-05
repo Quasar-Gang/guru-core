@@ -1,13 +1,13 @@
-"""InMemoryLlmCallRepo — in-memory implementation for tests."""
+"""In-memory `llm_calls` sink; tests assert on `records`."""
 
 from __future__ import annotations
 
 from packages.repo.entities import LlmCallLog
 
+__all__ = ["InMemoryLlmCallRepo"]
+
 
 class InMemoryLlmCallRepo:
-    """Accumulates llm_calls in an in-memory list; append-only."""
-
     def __init__(self) -> None:
         self.records: list[LlmCallLog] = []
 

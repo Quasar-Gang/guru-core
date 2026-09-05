@@ -25,7 +25,7 @@ validated model instance. The package covers:
   with `overrides[prompt_name]` taking precedence, and raises `LLMError("no fixture for ...")` when
   neither exists. Every call is recorded in `calls: list[tuple[prompt_name, Purpose, context]]` for
   tests to assert on.
-- **Reliability chain and observability** (PRD 7.5 / 7.8): `complete_validated(...)` runs the
+- **Reliability chain and observability**: `complete_validated(...)` runs the
   business rules over the model output, feeds any violations back into the next attempt, and either
   degrades to a `fallback` or raises `LLMValidationExhausted` once attempts run out. Each adapter
   reports an `LlmCallLog` to an `LlmObserver`; `NullObserver` just writes a structured log line.

@@ -1,4 +1,4 @@
-"""Import the user's Google Calendar into a Document (PRD 3.10).
+"""Import the user's Google Calendar into a Document.
 
 Unlike an upload there is no blob to keep, so this writes the document directly and the
 import lands as `parsed` without ever touching storage or the `import.parse` queue.
@@ -8,6 +8,7 @@ from datetime import timedelta
 from uuid import UUID
 
 from packages.importers import DocEvent
+from packages.queue import ProfileBuildJobV1, QueuePort
 from packages.repo import DocumentRepo, ImportRepo
 from services.api.application.google_access_token import GoogleAccessTokenProvider
 from services.api.application.list_imports import ImportView, to_view
@@ -35,12 +36,14 @@ class ImportGoogleCalendar:
         calendar: CalendarPort,
         tokens: GoogleAccessTokenProvider,
         clock: ClockPort,
+        queue: QueuePort,
     ) -> None:
         self._imports = imports
         self._documents = documents
         self._calendar = calendar
         self._tokens = tokens
         self._clock = clock
+        self._queue = queue
 
     async def __call__(self, user_id: UUID, days: int = DEFAULT_WINDOW_DAYS) -> ImportView:
         if days <= 0 or days > self.MAX_WINDOW_DAYS:
@@ -71,4 +74,5 @@ class ImportGoogleCalendar:
             [],
         )
         await self._imports.set_status(record.id, STATUS_PARSED)
+        await self._queue.enqueue(ProfileBuildJobV1(user_id=user_id))
         return to_view(record.model_copy(update={"status": STATUS_PARSED}), document)

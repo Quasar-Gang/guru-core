@@ -1,0 +1,38 @@
+# The columns the Analyzer lays a Profile out in.
+#
+# `unclassified` is a first-class dimension, not a classification failure. Unnamed time is
+# where the difference between the life someone describes and the life they run tends to
+# hide, so it is kept visible rather than tidied away — and in Station 3 it is the sharpest
+# signal available.
+#
+# `window_weeks` fixes how far back a Report looks. A fixed window is what keeps two runs a
+# quarter apart comparable.
+window_weeks: 26
+
+dimensions:
+  - key: work
+    label: Work
+    description: Where the working hours went, and what they were spent on.
+  - key: social
+    label: Social
+    description: Time with other people that is not work.
+  - key: learning
+    label: Learning
+    description: Deliberate study, reading, courses, practice.
+  - key: exercise
+    label: Exercise
+    description: Physical practice of any kind, however small.
+  - key: capacity
+    label: Capacity
+    description: >-
+      The room that was actually free. Observed, and not to be confused with the Quota,
+      which is declared by Q-3.
+  - key: money
+    label: Money
+    description: Where money flowed. The broadest coverage across dimensions, when present.
+    requires_source: card_statement
+  - key: unclassified
+    label: Unclassified
+    description: >-
+      Time that fits none of the above. Kept as its own column on purpose: it is the most
+      valuable one for the later reconciliation.

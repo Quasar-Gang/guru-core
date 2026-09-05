@@ -1,55 +1,33 @@
-# services/api — API Service
+# API Service
+
+The only front door. Everything the app talks to is here, over HTTP under `/v1`, plus the
+worker that parses uploads and pushes the schedule to a calendar.
 
 ## What it owns
 
-The single app-facing HTTP entrypoint (`/v1`), plus the consumers for the `import.parse` and
-`export.push` workers. Implemented so far:
+`users`, `oauth_connections`, `imports`, `documents`, `question_answers`, `quotas`,
+`direction_hypotheses`, `plans` (the row and its lifecycle columns), `checkins`,
+`plan_exports`, and it creates `direction_runs` and `reconciliations` for the Engine to
+fill in.
 
-- `POST /v1/auth/google` — log in with a Google authorization code, return a JWT we issue.
-- `GET /v1/me` — resolve the current user from a Bearer JWT.
-- `GET /health` — liveness check, no auth required.
+Two of those carry the weight:
 
-Layering: `domain/` (plain-Python error types) → `application/` (use cases + port Protocols)
-→ `adapters/` (FastAPI, httpx, JWT, clock) → `container.py` (the single composition root).
+**`direction_hypotheses` is append-only.** There is no update route and no repository method
+behind one. A hypothesis you could quietly edit could never be falsified, so `v0` is written
+once and left alone; a revision writes `v1`.
 
-## The ports it exposes
+**`plans` exists from the moment the hypothesis does**, in status `generating`, so the
+client always has something to poll while the Engine works.
 
-`application/ports.py` defines the ports this service owns; the implementations live in
-`adapters/`:
+## Ports it exposes
 
-| Port | Production impl | Test impl |
-|---|---|---|
-| `GoogleOidcPort` | `adapters/google/oidc.py:GoogleOidc` | `FakeGoogleOidc` |
-| `TokenIssuerPort` | `adapters/jwt_issuer.py:HmacTokenIssuer` | the same class, paired with `FakeClock` |
-| `ClockPort` | `adapters/clock.py:SystemClock` | `FakeClock` (supports `advance(seconds=...)`) |
-
-Every other port comes from `packages/`: the 14 `XxxRepo` types in `packages.repo`,
-`StoragePort` from `packages.storage`, `QueuePort` from `packages.queue`, and `CachePort`
-from `packages.cache`.
+`GoogleOidcPort` · `GoogleOAuthPort` · `CalendarPort` · `TokenIssuerPort` ·
+`TokenCipherPort` · `ClockPort`, all in `application/ports.py`, each with a real
+implementation and a fake under `adapters/`.
 
 ## What it does not do
 
-- It does not generate or revise plans (that is the Plan Engine) and does not store role
-  model content (that is the Role Model Service).
-- It does not call an LLM directly.
-- It never constructs an adapter itself: everything comes from `ApiContainer`.
-
-## Running it
-
-```bash
-uv run python -m cmd.api_server        # uvicorn, reads .env
-uv run pytest tests/unit/api tests/application/api
-```
-
-## Writing tests
-
-The repo-root `conftest.py` provides three fixtures:
-
-- `container` — `build_test_container()`, fully faked (in-memory repos / storage / queue,
-  `DictCache`, `FakeClock`, `HmacTokenIssuer`, `FakeGoogleOidc`).
-- `client` — `httpx.AsyncClient` over `httpx.ASGITransport`, wired to `create_app(container)`.
-- `auth_headers` — `{"Authorization": "Bearer ..."}` for an already-created user; that user's
-  id is available separately as the `auth_user_id` fixture.
-
-To swap a component, use `build_test_container(**overrides)`; the replacement really is passed
-to the use cases that depend on it.
+It never calls a model, never schedules anything, and never computes a report. All of that
+is the Engine's, reached through the queue. It does not call the Catalog Service over HTTP
+either: `role_models` has one writer and the read is the same for every user, so it reads
+the table directly.

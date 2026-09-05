@@ -1,0 +1,8 @@
+# What the Schedule may spend in a week, until Q-3 says otherwise.
+#
+# The Quota is declared, not observed: Q-3 forces a ranking over career, relationships and
+# health, and the answer becomes both a weekly ceiling and a cut order. A user who skips the
+# question still gets a quota — a deliberately modest one, stated in the plan's assumptions
+# rather than assumed silently.
+default_drop_first: career
+default_weekly_minutes: 300

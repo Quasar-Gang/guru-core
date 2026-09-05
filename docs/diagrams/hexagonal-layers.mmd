@@ -3,9 +3,9 @@ flowchart LR
     CMD["cmd/<br/><i>what to start</i>"] --> CONT["container.py<br/><i>the only assembly point</i>"]
     CONT --> AD_IN["adapters (inbound)<br/>FastAPI · ARQ consumers"]
     CONT -.->|injects| AD_OUT["adapters (outbound)<br/>PgRepo · R2Storage · OpenAICompatLLM"]
-    AD_IN --> UC["application<br/><i>one use case per file</i>"]
+    AD_IN --> UC["application<br/><i>one use case per station</i>"]
     UC --> PORTS["ports<br/><i>Protocol</i>"]
-    UC --> DOM["domain<br/>scheduler · state machines · diff · renderer"]
+    UC --> DOM["domain<br/>scheduler · quota · state machines · diff"]
     AD_OUT -.->|implements| PORTS
 
     classDef c fill:#F1EFE8,stroke:#888780,color:#2C2C2A

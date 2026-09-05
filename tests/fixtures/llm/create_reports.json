@@ -1,0 +1,85 @@
+{
+  "analysis": {
+    "readouts": {
+      "trajectory": "Five years, three roles, one field; the current role is the longest.",
+      "skills": [
+        "user interviews",
+        "design systems"
+      ],
+      "continuity": "A Thursday reading group has run 11 weeks unbroken.",
+      "voids": [
+        "weekends are almost empty",
+        "no side-project traces"
+      ],
+      "signals": [
+        "three recruiter conversations in three months"
+      ],
+      "unclassified": "Roughly a sixth of tracked time fits no named dimension."
+    },
+    "reports": [
+      {
+        "dimension": "work",
+        "headline": "What the work column looks like over the window.",
+        "observations": [
+          "The work column is present in the period covered."
+        ],
+        "voids": [],
+        "signals": []
+      },
+      {
+        "dimension": "social",
+        "headline": "What the social column looks like over the window.",
+        "observations": [
+          "The social column is present in the period covered."
+        ],
+        "voids": [],
+        "signals": []
+      },
+      {
+        "dimension": "learning",
+        "headline": "What the learning column looks like over the window.",
+        "observations": [
+          "The learning column is present in the period covered."
+        ],
+        "voids": [],
+        "signals": []
+      },
+      {
+        "dimension": "exercise",
+        "headline": "What the exercise column looks like over the window.",
+        "observations": [
+          "The exercise column is present in the period covered."
+        ],
+        "voids": [],
+        "signals": []
+      },
+      {
+        "dimension": "capacity",
+        "headline": "What the capacity column looks like over the window.",
+        "observations": [
+          "The capacity column is present in the period covered."
+        ],
+        "voids": [],
+        "signals": []
+      },
+      {
+        "dimension": "money",
+        "headline": "What the money column looks like over the window.",
+        "observations": [
+          "The money column is present in the period covered."
+        ],
+        "voids": [],
+        "signals": []
+      },
+      {
+        "dimension": "unclassified",
+        "headline": "What the unclassified column looks like over the window.",
+        "observations": [
+          "The unclassified column is present in the period covered."
+        ],
+        "voids": [],
+        "signals": []
+      }
+    ]
+  }
+}

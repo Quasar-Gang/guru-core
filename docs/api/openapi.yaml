@@ -1,48 +1,34 @@
 openapi: 3.1.0
 info:
   title: guru-core API
-  description: '
-
-    The single endpoint the app talks to. A user states a goal; the service collects
-
-    whatever context exists, asks follow-up questions when something essential is missing,
-
-    and produces three difficulty variants of a scheduled plan.
-
-
-    **Authentication.** Every endpoint except `POST /v1/auth/google`, `GET /health` and the
-
-    presigned `/v1/files/*` routes needs `Authorization: Bearer <jwt>`. Get the token from
-
-    `POST /v1/auth/google`; it carries the user id and expires after `JWT_TTL_SECONDS`.
-
-    The team-facing `role-models` writes authenticate with `X-API-Key` instead.
-
-
-    **Long-running work.** Plan generation, import parsing and calendar export run on a
-
-    queue, so the endpoints that start them return `202` with an id. Poll the resource
-
-    (`GET /v1/plan-sessions/{id}`, `GET /v1/imports`) rather than expecting a synchronous
-
-    result — PostgreSQL is the source of truth for job state, Redis only caches it.
-
-
-    **Errors.** Every failure returns the same envelope:
-
-    `{"error": {"code": "not_found", "message": "..."}}`. The code is the snake_case name of
-
-    the domain error: `invalid_input` (422), `unauthorized` (401), `forbidden` (403),
-
-    `not_found` (404), `conflict` (409), `reauth_required` (409), `rate_limited` (429).
-
-    '
+  description: "\nNobody can answer *\"what is your vision?\"* — it asks you to invent something from\
+    \ nothing.\nSo this service never asks. It reads the data you already have, offers borrowed shapes\
+    \ a\nlife can take, says which one your behaviour actually supports, and hands back a direction\n\
+    you can prove wrong inside one quarter.\n\n**The loop, in three stations.**\n\n1. **Intake and direction.**\
+    \ Upload a calendar and a resume (`/v1/imports`). The Uploader\n   normalizes them into one Profile,\
+    \ the Analyzer writes a Report per dimension, and the\n   Recommender scores every Role Model into\
+    \ a Fit Verdict with five cited evidence items and\n   one cheap probe (`/v1/direction/runs`). Three\
+    \ skippable questions set the quota\n   (`/v1/questions`). Choosing a verdict writes an append-only\
+    \ Direction Hypothesis\n   (`/v1/hypotheses`).\n2. **The plan.** One hypothesis becomes one plan:\
+    \ a milestone tree, flat tasks, and a\n   schedule (`/v1/plans`), exportable to the calendar you already\
+    \ read.\n3. **Quarterly reconciliation.** At the review date the same analysis runs again and is held\n\
+    \   against what the hypothesis predicted (`/v1/reconciliations`). The output is a question,\n   never\
+    \ a score, and answering it is what writes the next version.\n\n**Authentication.** Every endpoint\
+    \ except `POST /v1/auth/google`, `GET /health` and the\npresigned `/v1/files/*` routes needs `Authorization:\
+    \ Bearer <jwt>`. Get the token from\n`POST /v1/auth/google`; it carries the user id and expires after\
+    \ `JWT_TTL_SECONDS`.\n\n**Long-running work.** Analysis, plan generation, import parsing, reconciliation\
+    \ and\ncalendar export all run on a queue, so the endpoints that start them return `202` with an\n\
+    id. Poll the resource rather than the job — PostgreSQL is the source of truth, Redis only\ncaches.\n\
+    \n**Errors.** Every failure returns the same envelope:\n`{\"error\": {\"code\": \"not_found\", \"\
+    message\": \"...\"}}`. The code is the snake_case name of the\ndomain error: `invalid_input` (422),\
+    \ `unauthorized` (401), `forbidden` (403), `not_found`\n(404), `conflict` (409), `reauth_required`\
+    \ (409), `rate_limited` (429).\n"
   contact:
     name: Quasar-Gang
     url: https://github.com/Quasar-Gang/guru-core
   license:
     name: Proprietary — all rights reserved
-  version: 0.1.0
+  version: 1.0.0
 paths:
   /health:
     get:
@@ -160,115 +146,6 @@ paths:
         '404':
           description: '`not_found` — the token is valid but the user it points at no longer exists (the
             account was deleted). Treat it like a signed-out session.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests for this user.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-      security:
-      - BearerJWT: []
-  /v1/profile:
-    get:
-      tags:
-      - profile
-      summary: Read the signed-in user's profile
-      description: 'The standing context every plan is generated against: who the user is and where.
-
-
-        `answers` holds the onboarding questionnaire as a free-form JSON object, and
-
-        `timezone` is the IANA zone every scheduled task is placed in. The plan engine reads
-
-        this on each generation, so keeping it current directly improves plan quality.
-
-
-        A user who has never written a profile is **not** an error: this returns
-
-        `answers: {}`, `timezone: "UTC"` and the current time as `updated_at`. There is no
-
-        `404` here — use `is_new_user` from login, or an empty `answers`, to decide whether to
-
-        show onboarding.'
-      operationId: get_profile_v1_profile_get
-      responses:
-        '200':
-          description: The stored answers and timezone, or the defaults when nothing has been saved yet.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProfileView'
-        '401':
-          description: '`unauthorized` — missing, invalid or expired bearer token.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests for this user.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-      security:
-      - BearerJWT: []
-    put:
-      tags:
-      - profile
-      summary: Replace the signed-in user's profile
-      description: 'Write the onboarding answers, and later any edit the user makes to them.
-
-
-        This is a genuine `PUT`: `answers` **replaces** the stored object wholesale, it is not
-
-        merged key by key. To change one answer, read `GET /v1/profile`, edit the object
-
-        client-side, and send the whole thing back. Omitting `answers` entirely stores `{}`
-
-        and wipes what was there.
-
-
-        `timezone` is the exception: omit it or send `null` to keep the zone the user already
-
-        has (or `UTC` on a first write). When present it must be an IANA zone name; it is
-
-        validated against the system tz database before anything is saved, so a bad value
-
-        changes nothing.
-
-
-        Typically called right after a login that returned `is_new_user: true`, and again
-
-        whenever the user revisits their settings. Later plan generations pick the new values
-
-        up automatically; plans already generated are not rewritten.'
-      operationId: update_profile_v1_profile_put
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateProfileRequest'
-        required: true
-      responses:
-        '200':
-          description: The profile as stored, including the resolved timezone.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProfileView'
-        '401':
-          description: '`unauthorized` — missing, invalid or expired bearer token.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '422':
-          description: '`invalid_input` — `answers` is not a JSON object, one of its keys is not a string,
-            or `timezone` is not a name the IANA database knows (e.g. `Asia/Taipei`, not `GMT+8`).'
           content:
             application/json:
               schema:
@@ -927,118 +804,150 @@ paths:
         '422':
           description: Validation Error
           content: *id001
-  /v1/plan-sessions:
-    post:
+  /v1/profile:
+    get:
       tags:
-      - plan-sessions
-      summary: Start plan generation from a goal
-      description: "Where plan generation begins. **Only `goal` is required**; everything else is context.\n\
-        \n- `intake` — free-form answers about schedule, level and constraints. Whatever is missing\n\
-        \  is what the service will ask about in the follow-up round.\n- `import_ids` — ids from `GET\
-        \ /v1/imports`. Each must belong to the caller and already be\n  `parsed`; anything else is rejected\
-        \ with 422 rather than silently ignored.\n- `trait_role_model_id` / `persona_role_model_id` —\
-        \ optional picks from `/v1/role-models`.\n- A live Google Calendar connection is picked up automatically,\
-        \ so the generated schedule\n  avoids the user's existing events. No field controls this.\n\n\
-        The response is `202`, never a plan: generation runs on the queue. Poll\n`GET /v1/plan-sessions/{session_id}`\
-        \ and drive the UI off `status`:\n\n| status | what the client does |\n| --- | --- |\n| `collecting`\
-        \ | keep polling — context is being gathered |\n| `evaluating` | keep polling — the service is\
-        \ deciding whether it knows enough |\n| `questioning` | render `questions`, answer via `POST /v1/plan-sessions/{id}/answers`\
-        \ |\n| `generating` | keep polling — the three plans are being written |\n| `done` | `plans` holds\
-        \ three difficulty variants; let the user pick one |\n| `failed` | show `error`; the session is\
-        \ terminal and cannot be resumed |\n\n`GET /v1/jobs/{job_id}` reports the queue's own view of\
-        \ the same work, but the session row\nis the source of truth — a job record can expire while the\
-        \ session stays readable."
-      operationId: create_plan_session_v1_plan_sessions_post
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreatePlanSessionRequest'
-        required: true
+      - direction
+      summary: The system's read of who you are now
+      description: 'One Profile per user, revised in place — never a second one.
+
+
+        It is built by the `profile.build` job, which runs whenever an upload finishes parsing
+
+        or a constraint question is answered. Until then this returns an empty read with a
+
+        timezone, which is an honest answer rather than an error: the system has nothing to say
+
+        about someone whose data it has not seen.'
+      operationId: get_profile_v1_profile_get
       responses:
-        '202':
-          description: Accepted. `session_id` is the resource to poll; `job_id` identifies the queued
-            `plan.generate` job.
+        '200':
+          description: 'The Profile: `signals` (what the classifier found) and `coverage` (what it was
+            built from). Both are empty until something has been uploaded.'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreateSessionResult'
-        '422':
-          description: '`invalid_input` — `goal` is empty or whitespace only, one of `import_ids` does
-            not belong to the caller, or an import has not finished parsing (its `status` is not `parsed`).
-            Body validation failures use the same code.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/ProfileView'
         '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
       security:
       - BearerJWT: []
-  /v1/plan-sessions/{session_id}:
+  /v1/direction/runs:
+    post:
+      tags:
+      - direction
+      summary: Read the data and score every shape against it
+      description: 'Queue steps 3 to 8a: the Analyzer writes the Reports, the Recommender scores the shapes.
+
+
+        Two model calls, in that order and never merged. Going through Reports first gives the
+
+        Recommender inspectable evidence to reason over instead of one unexplainable leap, and
+
+        it is what makes the citation rule enforceable — every evidence item points at a Report
+
+        that exists.
+
+
+        Poll `GET /v1/direction/runs/latest`. `status` moves `pending` → `analyzing` →
+
+        `recommending` → `ready`, and the Reports are readable as soon as it reaches
+
+        `recommending`: the data is meant to speak before any shape is proposed.'
+      operationId: start_direction_run_v1_direction_runs_post
+      responses:
+        '202':
+          description: The new run, in status `pending`. Poll it for the rest.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectionRunView'
+        '401':
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`conflict` — nothing has been uploaded yet, or a run is already in flight. Two
+            concurrent runs would produce Reports that the other''s verdicts were never scored against.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - BearerJWT: []
+  /v1/direction/runs/latest:
     get:
       tags:
-      - plan-sessions
-      summary: Poll a plan session for questions or the finished plans
-      description: "The one endpoint to poll after `POST /v1/plan-sessions` or a round of answers.\n\n\
-        Which fields are populated depends entirely on `status`:\n\n- `questions` is non-empty **only**\
-        \ while `status` is `questioning`. Each question carries\n  its `options`, and whether a free-text\
-        \ answer (`allow_custom`) or a skip (`allow_skip`) is\n  accepted. `round` counts the follow-up\
-        \ rounds already asked; the service asks at most a\n  small fixed number and then generates with\
-        \ what it has.\n- `plans` is filled **only** once `status` is `done`, with the three difficulty\
-        \ variants —\n  each summarised with its weekly load (`sessions_per_week`, `total_minutes_per_week`)\
-        \ and\n  dates. All three start as `draft`; the user picks one by activating it with\n  `PATCH\
-        \ /v1/plans/{plan_id}` (`{\"status\": \"active\"}`).\n- `error` is set only when `status` is `failed`,\
-        \ which is terminal — start a new session.\n\nPolling is cheap but counts against the rate limit;\
-        \ a few seconds between calls is plenty."
-      operationId: get_plan_session_v1_plan_sessions__session_id__get
+      - direction
+      summary: The most recent run, with whatever it has produced so far
+      description: 'What the intake screens poll.
+
+
+        `reports` fills in first, then `verdicts` — six of them, one per shape, each carrying
+
+        exactly five evidence items and one probe. Note what the five items are not: a score.
+
+        Even the best-fitting shape gets items against it, and the worst gets items for it.'
+      operationId: get_latest_direction_run_v1_direction_runs_latest_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DirectionRunView'
+        '401':
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`not_found` — no run has been started.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - BearerJWT: []
+  /v1/direction/runs/{run_id}:
+    get:
+      tags:
+      - direction
+      summary: One run by id
+      description: 'An earlier run stays readable: its Reports are the baseline Station 3 compares against.'
+      operationId: get_direction_run_v1_direction_runs__run_id__get
       security:
       - BearerJWT: []
       parameters:
-      - name: session_id
+      - name: run_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
-          title: Session Id
+          title: Run Id
       responses:
         '200':
-          description: The session's current `status` and `round`, plus `questions` while `questioning`
-            and `plans` once `done`.
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PlanSessionView'
-        '404':
-          description: '`not_found` — no session with this id belongs to the caller. Another user''s session
-            is indistinguishable from one that never existed.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/DirectionRunView'
         '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
+        '404':
+          description: '`not_found` — no such run for this user.'
           content:
             application/json:
               schema:
@@ -1046,79 +955,332 @@ paths:
         '422':
           description: Validation Error
           content: *id001
-  /v1/plan-sessions/{session_id}/answers:
-    post:
+  /v1/questions:
+    get:
       tags:
-      - plan-sessions
-      summary: Answer a follow-up round and resume generation
-      description: 'Submit the answers to the questions currently returned by `GET /v1/plan-sessions/{id}`.
+      - questions
+      summary: The three questions, each with the reason it is being asked
+      description: 'Three questions that need no direction to answer, and no question before them.
 
 
-        Accepted **only while the session is `questioning`** — any other status is a 409. Each answer
+        "What do you want" is hard for someone without direction. These are not: Q-1 asks what
 
-        references a `question_id` from the current round and carries exactly one of: `choice` (a
+        you are certain you *do not* want, because ruling paths out is cheaper than picking one.
 
-        listed option), `custom` (free text, when `allow_custom`), or `skipped: true` (when
+        Q-2 asks about the pattern of giving things up, which is the baseline Station 3 needs to
 
-        `allow_skip`). Unanswered questions may simply be left out.
+        tell a growth-driven revision from an avoidance-driven one. Q-3 forces a ranking, and
+
+        the answer becomes the quota.
 
 
-        This is `202`, not the plan: the session moves back to `evaluating`, and from there either to
+        Every one is skippable, and a skipped question stays visible and answerable later.'
+      operationId: list_questions_v1_questions_get
+      responses:
+        '200':
+          description: All three, always, with whatever has been answered so far.
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/QuestionView'
+                type: array
+                title: Response List Questions V1 Questions Get
+        '401':
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - BearerJWT: []
+  /v1/questions/{key}:
+    put:
+      tags:
+      - questions
+      summary: Answer one question, or skip it
+      description: 'An answer is personal data, so it goes back to the Uploader rather than forward.
 
-        `questioning` again (one more round) or to `generating`. Keep polling
 
-        `GET /v1/plan-sessions/{session_id}` exactly as after the initial create.'
-      operationId: submit_answers_v1_plan_sessions__session_id__answers_post
+        It changes the Profile, the Reports, and every verdict downstream — disagreement is an
+
+        input to the pipeline, not an exception path around it. Answering re-queues the Profile
+
+        build; run the direction pass again afterwards to see the verdicts move.
+
+
+        Answering q3 also writes the quota: a weekly ceiling, and what gets cut first when
+
+        capacity runs short.'
+      operationId: answer_question_v1_questions__key__put
       security:
       - BearerJWT: []
       parameters:
-      - name: session_id
+      - name: key
         in: path
         required: true
         schema:
           type: string
-          format: uuid
-          title: Session Id
+          title: Key
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SubmitAnswersRequest'
+              $ref: '#/components/schemas/AnswerRequest'
       responses:
-        '202':
-          description: Accepted. The same `session_id`, plus the `job_id` of the queued `plan.continue`
-            job.
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreateSessionResult'
-        '404':
-          description: '`not_found` — no session with this id belongs to the caller. Another user''s session
-            is indistinguishable from one that never existed.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: '`conflict` — the session is not waiting for answers: its `status` is something
-            other than `questioning` (already `generating`, `done` or `failed`, so the answers arrived
-            too late), or it has no follow-up round on record. Re-read the session with `GET /v1/plan-sessions/{session_id}`
-            before retrying.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/AnswerView'
         '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
+        '422':
+          description: '`invalid_input` — `key` is not q1, q2 or q3, or q3 was answered with something
+            other than `career`, `relationships` or `health`.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /v1/quota:
+    get:
+      tags:
+      - questions
+      summary: What the schedule may spend, and what it drops first
+      description: 'Declared, not observed.
+
+
+        Capacity is what is physically possible and comes off the calendar. The quota is what
+
+        has been allowed, and it comes from q3. The Schedule satisfies both, and when they
+
+        disagree the quota''s cut order decides.'
+      operationId: get_quota_v1_quota_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuotaView'
+        '401':
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`not_found` — q3 has not been answered.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - BearerJWT: []
+  /v1/role-models:
+    get:
+      tags:
+      - role-models
+      summary: The six shipped shapes, plus your own
+      description: 'These are not occupations. They are shapes a life can take.
+
+
+        The same job title can grow into different shapes, and different job titles can be the
+
+        same shape. Every one states its cost, and picking one is not a commitment — it only
+
+        gives the next step something to compare against.'
+      operationId: list_role_models_v1_role_models_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/RoleModelView'
+                type: array
+                title: Response List Role Models V1 Role Models Get
+        '401':
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - BearerJWT: []
+    post:
+      tags:
+      - role-models
+      summary: Write your own shape
+      description: 'A user-authored template is a Role Model like any other.
+
+
+        It is scored alongside the shipped six, on the same terms, with the same rule that it
+
+        must state what it costs. It is visible only to you.'
+      operationId: author_role_model_v1_role_models_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorRoleModelRequest'
+        required: true
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleModelView'
+        '401':
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`invalid_input` — a field is missing, `cost` included.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - BearerJWT: []
+  /v1/hypotheses:
+    get:
+      tags:
+      - hypotheses
+      summary: Every version, oldest first
+      description: The whole append-only history. `v0` is still there, saying exactly what it said.
+      operationId: list_hypotheses_v1_hypotheses_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: '#/components/schemas/HypothesisView'
+                type: array
+                title: Response List Hypotheses V1 Hypotheses Get
+        '401':
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - BearerJWT: []
+    post:
+      tags:
+      - hypotheses
+      summary: Settle on one shape, and start the plan that tests it
+      description: 'Write `v0`, and queue the plan.
+
+
+        This is not a vision, and choosing is not committing. It is a borrowed shape, stamped
+
+        with its date and its source, that gives the next quarter something to compare against —
+
+        without a baseline there is no diagnosis, and without a diagnosis you stay at "it''s
+
+        fine, I guess" forever.
+
+
+        **Never overwritten is the point.** There is no update route here, and no repository
+
+        method behind one: a hypothesis you could quietly edit could never be falsified, because
+
+        you would rewrite it to match whatever you ended up doing and learn nothing. A revision
+
+        writes `v1` with its own date; `v0` stays readable forever as the thing that was
+
+        predicted.
+
+
+        Creating one also creates its Plan, in status `generating`. Poll
+
+        `GET /v1/plans/{plan_id}`.'
+      operationId: create_hypothesis_v1_hypotheses_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateHypothesisRequest'
+        required: true
+      responses:
+        '201':
+          description: The new version, and the id of the plan now generating.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HypothesisView'
+        '401':
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`not_found` — no such verdict for this user.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: '`invalid_input` — the verdict points at a shape that no longer exists.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - BearerJWT: []
+  /v1/hypotheses/{hypothesis_id}:
+    get:
+      tags:
+      - hypotheses
+      summary: One version
+      description: '`evidence_snapshot` is a copy, not a reference.
+
+
+        A verdict can be re-run and a report can be rewritten; what this hypothesis was built on
+
+        has to stay readable exactly as it was, or the review a quarter later has nothing solid
+
+        to argue with.'
+      operationId: get_hypothesis_v1_hypotheses__hypothesis_id__get
+      security:
+      - BearerJWT: []
+      parameters:
+      - name: hypothesis_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Hypothesis Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HypothesisView'
+        '401':
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`not_found` — no such hypothesis.'
           content:
             application/json:
               schema:
@@ -1130,22 +1292,8 @@ paths:
     get:
       tags:
       - plans
-      summary: List the caller's plans
-      description: 'The home screen''s list: every plan the user owns, across all their sessions.
-
-
-        **Without `status`, archived plans are hidden** — the default is "what I still work on", so
-
-        `draft` (a generated variant not yet chosen) and `active` come back. Pass `status=archived`
-
-        explicitly to show the archive; `status=draft` or `status=active` narrow to one bucket.
-
-
-        Each entry carries `completion_rate` (`done / (done + missed + skipped)`, `0.0` for a plan
-
-        nobody has touched) and the weekly load, so no per-plan call is needed to render the list.
-
-        Use `GET /v1/plans/{plan_id}` for phases, progress detail and export state.'
+      summary: Every plan, newest first
+      description: 'One plan per hypothesis, and no difficulty variants: the shape has been chosen.'
       operationId: list_plans_v1_plans_get
       security:
       - BearerJWT: []
@@ -1160,8 +1308,7 @@ paths:
           title: Status
       responses:
         '200':
-          description: 'One summary per plan: title, difficulty, status, dates, weekly load and completion
-            rate.'
+          description: Successful Response
           content:
             application/json:
               schema:
@@ -1170,37 +1317,34 @@ paths:
                   $ref: '#/components/schemas/PlanSummary'
                 title: Response List Plans V1 Plans Get
         '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: '`invalid_input` — `status` is not one of `draft`, `active` or `archived`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          description: Validation Error
+          content: *id001
   /v1/plans/{plan_id}:
     get:
       tags:
       - plans
-      summary: Read one plan with its progress and export state
-      description: "Everything one plan screen needs, except the individual tasks.\n\n- `phases` — the\
-        \ plan's stages, each with its focus and milestone.\n- `progress` — task counts by status, `completion_rate`,\
-        \ a `rate` per phase, and\n  `checkpoints` (the milestone tasks with their due dates and current\
-        \ status).\n- `exports` — where this plan has been pushed and how far behind it is; `pending_changes`\
-        \ is\n  the number of task edits waiting for the next incremental push.\n- `status` — `draft`,\
-        \ `active` or `archived`. See `PATCH /v1/plans/{plan_id}`.\n\nThe scheduled tasks themselves come\
-        \ from `GET /v1/plans/{plan_id}/tasks`, which can be sliced\nto the date range on screen."
+      summary: One plan, with its milestone tree
+      description: 'Milestones nest; tasks do not.
+
+
+        Decomposition goes into the tree, so completion never becomes a weighted-average
+
+        argument. `status` starts at `generating` and becomes `draft` when the engine finishes,
+
+        or `failed` with an `error` if it could not.
+
+
+        Read `structure.assumptions` before showing anything: it says what the plan had to
+
+        assume, what the quota cut, and what fit no free window. A plan that hides those is
+
+        lying about the week it just proposed.'
       operationId: get_plan_v1_plans__plan_id__get
       security:
       - BearerJWT: []
@@ -1214,29 +1358,21 @@ paths:
           title: Plan Id
       responses:
         '200':
-          description: The plan's structure (`phases`, `success_criteria`, `assumptions`), its `progress`
-            breakdown, and one `exports` row per target it has been pushed to.
+          description: The plan, `milestones` as a nested tree, and `structure` carrying the success criteria,
+            the assumptions, the quota, and anything trimmed or unplaced.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlanDetail'
-        '404':
-          description: '`not_found` — no plan with this id belongs to the caller. Another user''s plan
-            is indistinguishable from one that never existed.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
+        '404':
+          description: '`not_found` — no plan with this id belongs to the caller. Plans are scoped per
+            user, so another user''s id looks the same as a missing one.'
           content:
             application/json:
               schema:
@@ -1244,43 +1380,18 @@ paths:
         '422':
           description: Validation Error
           content: *id001
-    patch:
+  /v1/plans/{plan_id}/status:
+    put:
       tags:
       - plans
-      summary: Rename a plan, or move it through the lifecycle
-      description: 'Rename a plan, and — more importantly — **this is how the user picks a plan**.
+      summary: Start a plan, or put it away
+      description: 'A plan is started or archived; it is never edited into something else.
 
 
-        A finished session leaves three `draft` plans. Sending `{"status": "active"}` on one of them
+        Wanting a different plan means wanting a different hypothesis, and that is a new
 
-        is the choice: it becomes the running plan, and **the other plans of the same session are
-
-        pushed back to `draft` automatically** — a session never has two active plans.
-
-
-        The lifecycle, and every legal move:
-
-
-        | from | to |
-
-        | --- | --- |
-
-        | `draft` | `active`, `archived` |
-
-        | `active` | `draft`, `archived` |
-
-        | `archived` | `active` |
-
-
-        Anything else — including re-sending the status a plan already has — is a `409`
-
-        `illegal_transition`. Both fields are optional; omitting them both is a no-op read.
-
-
-        Changing status never touches an exported calendar. Use
-
-        `DELETE /v1/plans/{plan_id}/export/{target}` for that.'
-      operationId: update_plan_v1_plans__plan_id__patch
+        version rather than a rewrite of this one.'
+      operationId: set_plan_status_v1_plans__plan_id__status_put
       security:
       - BearerJWT: []
       parameters:
@@ -1296,166 +1407,29 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdatePlanRequest'
+              $ref: '#/components/schemas/PlanStatusRequest'
       responses:
         '200':
-          description: The plan as it now stands, in the same shape as `GET /v1/plans/{id}`.
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PlanDetail'
+                $ref: '#/components/schemas/PlanSummary'
+        '401':
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: '`not_found` — no plan with this id belongs to the caller. Another user''s plan
-            is indistinguishable from one that never existed.'
+          description: '`not_found` — no plan with this id belongs to the caller. Plans are scoped per
+            user, so another user''s id looks the same as a missing one.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: '`illegal_transition` — the requested move is not an edge of the lifecycle. In
-            particular a plan cannot be set to the status it already has, and an `archived` plan can only
-            go back to `active`, never straight to `draft`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '422':
-          description: '`invalid_input` — `title` is present but blank, or `status` is not one of `draft`,
-            `active`, `archived`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-    delete:
-      tags:
-      - plans
-      summary: Delete a plan and everything attached to it
-      description: 'Permanent, and it reaches outside the app — confirm with the user first.
-
-
-        Every export is undone before the plan goes, so the plan''s secondary Google Calendar and all
-
-        its events are deleted too, along with the plan''s tasks, check-ins and revisions. There is no
-
-        undo; offer `POST /v1/plans/{plan_id}/archive` to anyone who only wants it out of the way.
-
-
-        Removing the external calendar is best effort: a calendar the user already deleted, or a
-
-        Google connection that has expired, does not block the deletion. Any status other than `204`
-
-        means nothing was deleted.'
-      operationId: delete_plan_v1_plans__plan_id__delete
-      security:
-      - BearerJWT: []
-      parameters:
-      - name: plan_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Plan Id
-      responses:
-        '204':
-          description: '`204` with an empty body once the plan and its tasks are gone.'
-        '404':
-          description: '`not_found` — no plan with this id belongs to the caller. Another user''s plan
-            is indistinguishable from one that never existed.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '422':
-          description: Validation Error
-          content: *id001
-  /v1/plans/{plan_id}/archive:
-    post:
-      tags:
-      - plans
-      summary: Archive a plan
-      description: 'Put a plan away without losing it — the shorthand for `PATCH` with `archived`.
-
-
-        The plan and all its data stay; it simply drops out of the default `GET /v1/plans` listing
-
-        and can be brought back with `PATCH /v1/plans/{plan_id}` (`{"status": "active"}`).
-
-
-        **Archiving deliberately leaves an exported calendar alone**: events stay in Google Calendar
-
-        until the plan is deleted, or the export is undone with
-
-        `DELETE /v1/plans/{plan_id}/export/{target}`.'
-      operationId: archive_plan_v1_plans__plan_id__archive_post
-      security:
-      - BearerJWT: []
-      parameters:
-      - name: plan_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Plan Id
-      responses:
-        '200':
-          description: The archived plan, in the same shape as `GET /v1/plans/{id}`.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PlanDetail'
-        '404':
-          description: '`not_found` — no plan with this id belongs to the caller. Another user''s plan
-            is indistinguishable from one that never existed.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: '`illegal_transition` — the plan is already `archived`; there is nothing to do.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
+          description: '`conflict` — that move is not allowed from the plan''s current status.'
           content:
             application/json:
               schema:
@@ -1467,26 +1441,16 @@ paths:
     get:
       tags:
       - plans
-      summary: List a plan's scheduled tasks over a date range
-      description: 'What the built-in calendar and todo list are drawn from.
+      summary: The flat task list, with where each one landed
+      description: 'Every task, in schedule order, windowed by `start_from` / `start_to` for a day or
+        week view.
 
 
-        `from` and `to` are **local calendar dates in the plan owner''s timezone** (the one on their
+        Times come from the schedule slot, not the task: the task says what the work is, the
 
-        profile, falling back to UTC), and **both ends are inclusive**: `from=2026-03-02&to=2026-03-08`
+        slot says when it was placed. Same inputs, same placement — which is what lets a review
 
-        is exactly that week, whatever the user''s offset. Omit either end for an open range, or both
-
-        for the whole plan.
-
-
-        `start_at` / `end_at` come back as UTC instants — render them in the user''s timezone.
-
-        `all_day` marks tasks with no meaningful time of day (rest days and checkpoints). `synced`
-
-        tells you whether this task''s current state has reached the exported calendar; it flips to
-
-        `false` on every edit and back to `true` after the next push.'
+        a quarter later compare against something rather than against noise.'
       operationId: list_plan_tasks_v1_plans__plan_id__tasks_get
       security:
       - BearerJWT: []
@@ -1498,76 +1462,66 @@ paths:
           type: string
           format: uuid
           title: Plan Id
-      - name: from
+      - name: start_from
         in: query
         required: false
         schema:
           anyOf:
           - type: string
-            format: date
+            format: date-time
           - type: 'null'
-          title: From
-      - name: to
+          description: Only tasks starting at or after this.
+          title: Start From
+        description: Only tasks starting at or after this.
+      - name: start_to
         in: query
         required: false
         schema:
           anyOf:
           - type: string
-            format: date
+            format: date-time
           - type: 'null'
-          title: To
+          description: Only tasks starting before this.
+          title: Start To
+        description: Only tasks starting before this.
       responses:
         '200':
-          description: '`items` in schedule order plus `total`, the number of tasks in the requested range.'
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PlanTaskList'
+                type: array
+                items:
+                  $ref: '#/components/schemas/TaskView'
+                title: Response List Plan Tasks V1 Plans  Plan Id  Tasks Get
+        '401':
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: '`not_found` — no plan with this id belongs to the caller. Another user''s plan
-            is indistinguishable from one that never existed.'
+          description: '`not_found` — no plan with this id belongs to the caller. Plans are scoped per
+            user, so another user''s id looks the same as a missing one.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: '`invalid_input` — `from` or `to` is not an ISO `YYYY-MM-DD` date.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /v1/plans/{plan_id}/tasks/{task_id}:
-    patch:
+          description: Validation Error
+          content: *id001
+  /v1/plans/{plan_id}/tasks/{task_id}/status:
+    put:
       tags:
       - plans
-      summary: Tick off, reschedule, or annotate one task
-      description: "One task at a time: the checkbox and the drag-and-drop of the calendar view.\n\nEvery\
-        \ field is optional; only what is sent changes. Sending nothing returns the task\nuntouched.\n\
-        \n- `status` — `pending`, `done`, `missed` or `skipped`. Moving to `done` stamps\n  `completed_at`;\
-        \ moving back to `pending` clears it.\n- `start_at` / `end_at` — reschedule. Either may be sent\
-        \ alone, but the resulting interval\n  must have `end_at` strictly after `start_at`, so a lone\
-        \ `start_at` that overruns the\n  existing `end_at` is a 422.\n- `missed_reason` — free text kept\
-        \ alongside a missed task; it is what a later\n  `postpone` / `reduce` revision explains itself\
-        \ with.\n\nAny accepted change marks the task out of sync and, **if the plan has been exported\
-        \ to Google\nCalendar, queues an incremental push automatically** — no export call is needed.\
-        \ The response\nis written before that push runs, so `synced` is `false` here and turns `true`\
-        \ once\n`GET /v1/plans/{plan_id}/export` reports `synced` again.\n\nTo record a whole day at once,\
-        \ use `POST /v1/plans/{plan_id}/checkins` instead."
-      operationId: update_plan_task_v1_plans__plan_id__tasks__task_id__patch
+      summary: Tick one task off
+      description: 'Completion lives here; the calendar is only a projection of it.
+
+
+        Changing a status marks the slot dirty and queues an incremental push wherever the plan
+
+        already has a calendar.'
+      operationId: update_task_status_v1_plans__plan_id__tasks__task_id__status_put
       security:
       - BearerJWT: []
       parameters:
@@ -1590,69 +1544,41 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdatePlanTaskRequest'
+              $ref: '#/components/schemas/TaskStatusRequest'
       responses:
         '200':
-          description: The task after the change, including its refreshed `synced` flag.
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PlanTaskView'
+                $ref: '#/components/schemas/TaskView'
+        '401':
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: '`not_found` — the plan does not belong to the caller, or the task does not belong
-            to this plan.'
+          description: '`not_found` — no plan with this id belongs to the caller. Plans are scoped per
+            user, so another user''s id looks the same as a missing one.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: '`invalid_input` — `status` is not one of `pending`, `done`, `missed`, `skipped`,
-            or the resulting `end_at` is not strictly after `start_at`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          description: Validation Error
+          content: *id001
   /v1/plans/{plan_id}/checkins:
     post:
       tags:
       - plans
-      summary: Submit the daily check-in
-      description: 'Record how one day went, in a single call.
+      summary: The daily check-in
+      description: 'One row per plan and day; re-submitting the same day replaces it.
 
 
-        `checkin_date` is a local calendar date, and there is **one check-in per plan per date**:
+        Statuses are written straight through to the tasks, so there is exactly one place that
 
-        submitting the same date again replaces the previous submission rather than adding to it, so
-
-        an edited day should be re-sent in full.
-
-
-        Each entry in `results` sets one task to `done`, `missed` or `skipped`, with an optional
-
-        `reason` (stored as the task''s `missed_reason`). The tasks are the real record — a check-in
-
-        writes straight through to them, so the counts in `GET /v1/plans/{plan_id}` move with it —
-
-        and, when the plan is exported to Google Calendar, an incremental push is queued for the
-
-        tasks that changed.
-
-
-        `results` may be empty: that stores a note-only check-in and touches no task.'
+        says what happened.'
       operationId: submit_checkin_v1_plans__plan_id__checkins_post
       security:
       - BearerJWT: []
@@ -1669,38 +1595,29 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SubmitCheckinRequest'
+              $ref: '#/components/schemas/CheckinRequest'
       responses:
         '200':
-          description: The stored check-in for that date, with the results as recorded.
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CheckinView'
+        '401':
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: '`not_found` — no plan with this id belongs to the caller. Another user''s plan
-            is indistinguishable from one that never existed.'
+          description: '`not_found` — no plan with this id belongs to the caller. Plans are scoped per
+            user, so another user''s id looks the same as a missing one.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: '`invalid_input` — one of `results[].task_id` does not belong to this plan, or
-            a `status` is not one of `done`, `missed`, `skipped` (`pending` is not a check-in outcome).'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
+          description: '`invalid_input` — one of the tasks does not belong to this plan.'
           content:
             application/json:
               schema:
@@ -1708,20 +1625,8 @@ paths:
     get:
       tags:
       - plans
-      summary: Read the check-in history and the daily completion curve
-      description: 'The progress screen: every check-in ever submitted for this plan, plus its curve.
-
-
-        `daily_rates` is derived per check-in — `done` over how many tasks that day''s submission
-
-        covered — so it is a record of what the user reported, not of the plan as a whole. A day with
-
-        no check-in has no point at all, and a note-only check-in scores `0.0` over `0` tasks.
-
-
-        For the plan-wide numbers (overall completion, per-phase rates, checkpoints) read
-
-        `GET /v1/plans/{plan_id}` instead.'
+      summary: Check-in history and the completion curve
+      description: '`daily_rates` is `done / total` over what each day''s submission actually covered.'
       operationId: list_checkins_v1_plans__plan_id__checkins_get
       security:
       - BearerJWT: []
@@ -1735,29 +1640,20 @@ paths:
           title: Plan Id
       responses:
         '200':
-          description: '`items`, the check-ins as submitted, and `daily_rates`, one `done / total` point
-            per check-in date.'
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/CheckinHistory'
-        '404':
-          description: '`not_found` — no plan with this id belongs to the caller. Another user''s plan
-            is indistinguishable from one that never existed.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
+        '404':
+          description: '`not_found` — no plan with this id belongs to the caller. Plans are scoped per
+            user, so another user''s id looks the same as a missing one.'
           content:
             application/json:
               schema:
@@ -1765,42 +1661,20 @@ paths:
         '422':
           description: Validation Error
           content: *id001
-  /v1/plans/{plan_id}/export:
+  /v1/plans/{plan_id}/exports:
     post:
       tags:
       - plans
-      summary: 'Export a plan: Markdown inline, everything else queued'
-      description: 'One entry point, **two very different behaviours depending on `target`**.
+      summary: Push the schedule onto the user's calendar
+      description: 'A plan nobody sees is a plan nobody runs, so it goes where the week already lives.
 
 
-        `target: "markdown"` is **synchronous**. The document is rendered during this request and the
+        The first push builds the plan its own secondary calendar (`mode: full`); later ones
 
-        `200` already carries it: `markdown.content` is the Markdown text (render or copy it straight
+        replay only what changed (`mode: incremental`). Deleting that calendar removes the plan
 
-        away) and `markdown.download_url` is a pre-signed link to the stored file that **expires
-
-        after about 15 minutes** — fetch it now, do not persist it. There is no `job_id`, nothing is
-
-        queued, and nothing needs polling. `options` slices the document:
-
-        `include_completed` (default `true`), and `from` / `to` as ISO dates.
-
-
-        Every other target — `google_calendar`, `google_sheets`, `notion` — is **asynchronous**. The
-
-        response carries `job_id` and `mode` (`full` the first time, `incremental` once the plan has
-
-        a calendar of its own) and the work runs on the queue. Poll
-
-        `GET /v1/plans/{plan_id}/export`, whose row moves `queued` → `synced` or `failed` (with
-
-        `error`); `GET /v1/jobs/{job_id}` is a coarser view of the same push.
-
-
-        Either way the plan must be `active` (409 otherwise), and a queued Google target needs a live
-
-        Google connection, which is verified before anything is enqueued.'
-      operationId: request_export_v1_plans__plan_id__export_post
+        from view in one click and costs nothing — the database stays authoritative.'
+      operationId: request_export_v1_plans__plan_id__exports_post
       security:
       - BearerJWT: []
       parameters:
@@ -1816,76 +1690,43 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/RequestExportRequest'
+              $ref: '#/components/schemas/ExportRequest'
       responses:
-        '200':
-          description: For `markdown`, `markdown` holds the rendered document and its download link. For
-            every other target, `job_id` and `mode` describe the queued push and `markdown` is null.
+        '202':
+          description: Successful Response
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExportRequestResult'
+        '401':
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: '`not_found` — no plan with this id belongs to the caller. Another user''s plan
-            is indistinguishable from one that never existed.'
+          description: '`not_found` — no plan with this id belongs to the caller. Plans are scoped per
+            user, so another user''s id looks the same as a missing one.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: Two different codes share this status. `conflict` — the plan is not `active`; only
-            an active plan can be exported, so activate it with `PATCH /v1/plans/{plan_id}` first. `reauth_required`
-            — a queued target needs Google, and the user has never connected it or the authorization has
-            expired; send them through `/v1/integrations` and retry. This is checked up front, so the
-            client is never left watching a job that was doomed from the start.
+          description: '`conflict` — the plan is not active. `reauth_required` — Google is not connected,
+            or the grant expired; reconnect and try again.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
-          description: '`invalid_input` — `target` is not one of `markdown`, `google_calendar`, `google_sheets`,
-            `notion`, or the `options` object is not valid for the target (for `markdown`: `include_completed`
-            must be a boolean, `from` / `to` ISO dates).'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          description: Validation Error
+          content: *id001
     get:
       tags:
       - plans
-      summary: Check where each export target stands
-      description: 'What to poll after a queued `POST /v1/plans/{plan_id}/export`.
-
-
-        Each row carries `status` (`queued` while the push waits or runs, `synced` when it finished,
-
-        `failed` with the reason in `error` — `reauth_required` there means the Google connection
-
-        expired mid-push), `external_calendar_id` (the calendar the events live in),
-
-        `last_synced_at`, and `pending_changes`: how many task edits are waiting for the next
-
-        incremental push.
-
-
-        An empty array means this plan has never been exported. Markdown exports are rendered inline
-
-        and stored nowhere, so they are never listed.'
-      operationId: get_export_status_v1_plans__plan_id__export_get
+      summary: Where each export stands, and how much has changed since
+      description: '`pending_changes` is the dirty count: exactly what the next push would send.'
+      operationId: get_export_status_v1_plans__plan_id__exports_get
       security:
       - BearerJWT: []
       parameters:
@@ -1898,32 +1739,23 @@ paths:
           title: Plan Id
       responses:
         '200':
-          description: One row per target this plan has been exported to — empty until the first export.
-            Markdown never appears here.
+          description: Successful Response
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/ExportStatusView'
-                title: Response Get Export Status V1 Plans  Plan Id  Export Get
-        '404':
-          description: '`not_found` — no plan with this id belongs to the caller. Another user''s plan
-            is indistinguishable from one that never existed.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                title: Response Get Export Status V1 Plans  Plan Id  Exports Get
         '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
+        '404':
+          description: '`not_found` — no plan with this id belongs to the caller. Plans are scoped per
+            user, so another user''s id looks the same as a missing one.'
           content:
             application/json:
               schema:
@@ -1931,29 +1763,13 @@ paths:
         '422':
           description: Validation Error
           content: *id001
-  /v1/plans/{plan_id}/export/{target}:
+  /v1/plans/{plan_id}/exports/{target}:
     delete:
       tags:
       - plans
-      summary: Undo an export and delete the external calendar
-      description: 'Take the plan back out of the external service; the plan itself is untouched.
-
-
-        `target` is the value from `GET /v1/plans/{plan_id}/export` — in practice `google_calendar`.
-
-        **The whole secondary calendar is removed, not the events one by one**, every task forgets its
-
-        external reference, and the export row disappears, so a later export starts a fresh `full`
-
-        push.
-
-
-        Deleting the remote calendar is best effort: a calendar the user already removed, or an
-
-        expired Google connection, still leaves the local state cleaned up — a plan can never get
-
-        stuck in an exported state it cannot leave.'
-      operationId: unexport_plan_v1_plans__plan_id__export__target__delete
+      summary: Take the plan off the calendar
+      description: Deletes the calendar and forgets every event id, so a later push starts clean.
+      operationId: unexport_plan_v1_plans__plan_id__exports__target__delete
       security:
       - BearerJWT: []
       parameters:
@@ -1972,24 +1788,16 @@ paths:
           title: Target
       responses:
         '204':
-          description: '`204` with an empty body once the export has been undone.'
-        '404':
-          description: '`not_found` — the plan does not belong to the caller, or this plan has no export
-            for `target` (nothing was ever pushed there, or it has already been undone).'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          description: Successful Response
         '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
+        '404':
+          description: '`not_found` — no plan with this id belongs to the caller. Plans are scoped per
+            user, so another user''s id looks the same as a missing one.'
           content:
             application/json:
               schema:
@@ -1997,361 +1805,161 @@ paths:
         '422':
           description: Validation Error
           content: *id001
-  /v1/plans/{plan_id}/revisions:
+  /v1/reconciliations:
     post:
       tags:
-      - plans
-      summary: Ask for a revision when the plan has slipped
-      description: "Start a rescheduling proposal. **Nothing changes until the user accepts it.**\n\n\
-        Two strategies:\n\n- `postpone` — keep the workload, push the remaining schedule later (and the\
-        \ deadline with\n  it); for someone who fell behind.\n- `reduce` — keep the dates, lighten the\
-        \ weekly load; for someone who cannot keep the pace.\n\n`note` is the user's own words about what\
-        \ went wrong; it is shown back until the engine\nreplaces it with its own `rationale`.\n\nRequires\
-        \ an `active` plan, and **only one revision may be open at a time** — a second request\nwhile\
-        \ a proposal is still undecided is a `409`.\n\nThis returns `202`: the proposal is computed on\
-        \ the queue. Poll\n`GET /v1/plans/{plan_id}/revisions/{revision_id}` until its `status` leaves\
-        \ `pending` for\n`proposed` (`diff` and `summary` now filled in) or `failed`, then show the diff\
-        \ and let the\nuser accept or reject it."
-      operationId: create_revision_v1_plans__plan_id__revisions_post
+      - reconciliations
+      summary: Review a quarter against the hypothesis that predicted it
+      description: 'At the review date, the same Analyzer runs again — but now there is a baseline.
+
+
+        Everything comparable is computed first and only then narrated. Unclassified time is
+
+        where this earns its keep: in Station 1 it was merely flagged, and here it finally has
+
+        something to be measured against.
+
+
+        Poll `GET /v1/reconciliations/{id}` until `status` is `done`.'
+      operationId: start_reconciliation_v1_reconciliations_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartReconciliationRequest'
+        required: true
+      responses:
+        '202':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReconciliationView'
+        '401':
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`not_found` — no such hypothesis.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: '`conflict` — a reconciliation for that hypothesis is already running.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation Error
+          content: *id001
+      security:
+      - BearerJWT: []
+  /v1/reconciliations/{reconciliation_id}:
+    get:
+      tags:
+      - reconciliations
+      summary: The comparison, the note, and the question
+      description: 'The output is a question, not a score. Nothing here grades anyone.
+
+
+        `revision_kind` classifies a changed plan rather than punishing it: scope that moved
+
+        because something was learned is `growth`, scope that shrank at the first resistance is
+
+        `avoidance`. That distinction is what q2 was collected for.
+
+
+        `outcome` stays null until you answer.'
+      operationId: get_reconciliation_v1_reconciliations__reconciliation_id__get
       security:
       - BearerJWT: []
       parameters:
-      - name: plan_id
+      - name: reconciliation_id
         in: path
         required: true
         schema:
           type: string
           format: uuid
-          title: Plan Id
+          title: Reconciliation Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReconciliationView'
+        '401':
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: '`not_found` — no such reconciliation.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          description: Validation Error
+          content: *id001
+  /v1/reconciliations/{reconciliation_id}/decision:
+    put:
+      tags:
+      - reconciliations
+      summary: 'Answer: does this shape still count?'
+      description: 'Three ways forward, and the choice is yours.
+
+
+        `holds` keeps the shape and asks for a new probe. `revise` appends the next version of
+
+        the hypothesis — `next_hypothesis_id` comes back with it — and leaves the previous
+
+        version untouched, because that is the whole point of writing it down. `replace` means
+
+        starting Station 1 again from the data.'
+      operationId: decide_reconciliation_v1_reconciliations__reconciliation_id__decision_put
+      security:
+      - BearerJWT: []
+      parameters:
+      - name: reconciliation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+          title: Reconciliation Id
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/CreateRevisionRequest'
+              $ref: '#/components/schemas/DecisionRequest'
       responses:
-        '202':
-          description: Accepted. `revision_id` is the resource to poll; `job_id` identifies the queued
-            `plan.revise` job.
+        '200':
+          description: Successful Response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/CreateRevisionResult'
+                $ref: '#/components/schemas/ReconciliationView'
+        '401':
+          description: '`unauthorized` — missing, invalid or expired bearer token.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
-          description: '`not_found` — no plan with this id belongs to the caller. Another user''s plan
-            is indistinguishable from one that never existed.'
+          description: '`not_found` — no such reconciliation.'
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: '`conflict` — either the plan is not `active` (only a running plan can be revised),
-            or this plan **already has an open revision**: a plan may hold at most one undecided proposal,
-            so accept or reject the existing one before asking for another. `GET /v1/plans/{plan_id}/revisions`
-            shows which one is still `pending` or `proposed`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '422':
-          description: '`invalid_input` — `strategy` is not `postpone` or `reduce`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-    get:
-      tags:
-      - plans
-      summary: List every revision ever asked for on this plan
-      description: 'The plan''s revision history, including the one still awaiting a decision.
-
-
-        Oldest first. At most one entry is undecided (`status: "proposed"`), and that is the one
-
-        blocking a new `POST /v1/plans/{plan_id}/revisions` — as is one still being computed
-
-        (`pending`); the rest are `accepted`, `rejected` or `failed`. `decided_at` stays null
-
-        until the user answers.'
-      operationId: list_revisions_v1_plans__plan_id__revisions_get
-      security:
-      - BearerJWT: []
-      parameters:
-      - name: plan_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Plan Id
-      responses:
-        '200':
-          description: All revisions, oldest first, each with its full diff.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/RevisionView'
-                title: Response List Revisions V1 Plans  Plan Id  Revisions Get
-        '404':
-          description: '`not_found` — no plan with this id belongs to the caller. Another user''s plan
-            is indistinguishable from one that never existed.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '422':
-          description: Validation Error
-          content: *id001
-  /v1/plans/{plan_id}/revisions/{revision_id}:
-    get:
-      tags:
-      - plans
-      summary: Read one revision and its proposed diff
-      description: 'Poll this after a `202` from `POST /v1/plans/{plan_id}/revisions`, then render the
-        diff.
-
-
-        While the engine is still working, `diff` is empty and `rationale` still holds the user''s own
-
-        note. Once `status` is `proposed`, `rationale` explains the proposal and `diff` lists the
-
-        affected tasks, each with `before` / `after` snapshots and a `kind`: `added`, `moved`,
-
-        `removed`, `shortened`, `lengthened`, `reduced` or `unchanged`. `summary` counts those kinds
-
-        for a one-line headline ("3 moved, 1 removed").
-
-
-        A `proposed` revision is a preview only — the plan''s tasks are still the old ones until
-
-        `POST .../accept`.'
-      operationId: get_revision_v1_plans__plan_id__revisions__revision_id__get
-      security:
-      - BearerJWT: []
-      parameters:
-      - name: plan_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Plan Id
-      - name: revision_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Revision Id
-      responses:
-        '200':
-          description: The revision's `status` and `rationale`, the per-task `diff`, and a `summary` counting
-            the diff by kind.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RevisionView'
-        '404':
-          description: '`not_found` — the plan does not belong to the caller, or no revision with this
-            id belongs to that plan.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '422':
-          description: Validation Error
-          content: *id001
-  /v1/plans/{plan_id}/revisions/{revision_id}/accept:
-    post:
-      tags:
-      - plans
-      summary: Accept a proposed revision and rewrite the schedule
-      description: 'Apply the proposal. **This is the only thing that ever rewrites a plan''s schedule.**
-
-
-        Everything from **today onwards** is replaced by the proposed tasks; days already past keep
-
-        their history, including what was ticked off. The plan''s own fields follow the proposal too —
-
-        `deadline`, `duration_weeks`, `goal_statement` and its structure — so re-read
-
-        `GET /v1/plans/{plan_id}` and `GET /v1/plans/{plan_id}/tasks` afterwards rather than patching
-
-        the client''s copy.
-
-
-        If the plan is exported to Google Calendar, an incremental push is queued automatically;
-
-        watch `GET /v1/plans/{plan_id}/export` for it to land.
-
-
-        The decision is final and frees the plan for a future revision; call it only on a revision
-
-        whose `status` is `proposed`.'
-      operationId: accept_revision_v1_plans__plan_id__revisions__revision_id__accept_post
-      security:
-      - BearerJWT: []
-      parameters:
-      - name: plan_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Plan Id
-      - name: revision_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Revision Id
-      responses:
-        '200':
-          description: The revision, now `accepted`, with `decided_at` set.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RevisionView'
-        '404':
-          description: '`not_found` — the plan does not belong to the caller, or no revision with this
-            id belongs to that plan.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: '`conflict` — the revision is not `proposed`: it is still being computed, it `failed`,
-            or it has already been accepted or rejected (a decision is final). The same code is returned
-            when a revision reached `proposed` carrying no proposal to apply.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '422':
-          description: Validation Error
-          content: *id001
-  /v1/plans/{plan_id}/revisions/{revision_id}/reject:
-    post:
-      tags:
-      - plans
-      summary: Reject a proposed revision and keep the plan as is
-      description: 'Turn the proposal down. The plan, its tasks and its exports are left exactly as they
-        were.
-
-
-        The revision is kept in the history as `rejected` — nothing is written to the plan — and the
-
-        plan is free to be revised again, so the user can immediately ask for the other strategy with
-
-        `POST /v1/plans/{plan_id}/revisions`.'
-      operationId: reject_revision_v1_plans__plan_id__revisions__revision_id__reject_post
-      security:
-      - BearerJWT: []
-      parameters:
-      - name: plan_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Plan Id
-      - name: revision_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Revision Id
-      responses:
-        '200':
-          description: The revision, now `rejected`, with `decided_at` set.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RevisionView'
-        '404':
-          description: '`not_found` — the plan does not belong to the caller, or no revision with this
-            id belongs to that plan.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '409':
-          description: '`conflict` — the revision is not `proposed`: it is still being computed, it `failed`,
-            or it has already been accepted or rejected (a decision is final).'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
+          description: '`conflict` — the review is not finished yet, or it has already been answered.'
           content:
             application/json:
               schema:
@@ -2433,502 +2041,93 @@ paths:
         '422':
           description: Validation Error
           content: *id001
-  /v1/role-models:
-    get:
-      tags:
-      - role-models
-      summary: Browse the role model catalogue
-      description: 'The picker behind `trait_role_model_id` / `persona_role_model_id` on a plan session.
-
-
-        Role models are the shared, team-curated library the plan generator borrows from: a *trait*
-
-        model shapes how a plan is structured, a *persona* model shapes how it speaks. Filter with
-
-        `kind`, and with `tags` repeated once per tag (`?tags=fitness&tags=beginner`) — `match=any`
-
-        returns anything carrying one of them, `match=all` only what carries every one.
-
-
-        **Auth: the user''s JWT.** Reading the catalogue is open to any signed-in user; only the
-
-        `POST` / `PUT` / `DELETE` routes below are team-only.
-
-
-        Proxied straight from the Role Model Service, so the body and status are that service''s,
-
-        not this one''s. The error envelope is identical in both.'
-      operationId: list_role_models_v1_role_models_get
-      security:
-      - BearerJWT: []
-      parameters:
-      - name: kind
-        in: query
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Kind
-      - name: tags
-        in: query
-        required: false
-        schema:
-          type: array
-          items:
-            type: string
-          default: []
-          title: Tags
-      - name: match
-        in: query
-        required: false
-        schema:
-          enum:
-          - any
-          - all
-          type: string
-          default: any
-          title: Match
-      - name: limit
-        in: query
-        required: false
-        schema:
-          type: integer
-          maximum: 200
-          minimum: 1
-          default: 50
-          title: Limit
-      responses:
-        '200':
-          description: A JSON array of role model summaries (`id`, `kind`, `name`, `tags`), proxied verbatim
-            from the Role Model Service.
-          content:
-            application/json:
-              schema: {}
-        '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '422':
-          description: '`invalid_input` — `limit` is outside 1–200, or `match` is not `any` / `all`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-    post:
-      tags:
-      - role-models
-      summary: Create a role model (team only, X-API-Key)
-      description: 'Add an entry to the shared catalogue. **Content tooling only — not an app endpoint.**
-
-
-        **Auth: `X-API-Key`, not a JWT.** The header is forwarded to the Role Model Service, which
-
-        checks it; no user token is involved and no user context is recorded. The catalogue is global,
-
-        so anything created here is visible to every signed-in user.
-
-
-        The body is passed through unvalidated by this service: `kind` and a non-empty `name` are
-
-        required, with optional `tags` (list of strings) and `content` (a free-form object whose shape
-
-        the Role Model Service defines). The status and body of the response are the upstream ones.'
-      operationId: create_role_model_v1_role_models_post
-      parameters:
-      - name: X-API-Key
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Api-Key
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-              title: Body
-      responses:
-        '200':
-          description: The created record. The upstream status is passed through unchanged, so a successful
-            create actually arrives as `201` even though the schema declares `200`.
-          content:
-            application/json:
-              schema: {}
-        '401':
-          description: '`unauthorized` — the `X-API-Key` header is missing or does not match the Role
-            Model Service''s key. This is a team credential, not the user''s JWT: a signed-in end user
-            cannot reach this endpoint.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '422':
-          description: '`invalid_input` — the body is missing `kind` or `name`, or `name` is empty.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /v1/role-models/tags:
-    get:
-      tags:
-      - role-models
-      summary: List the tags available for filtering
-      description: 'The vocabulary for the `tags` filter of `GET /v1/role-models`.
-
-
-        Use it to build the filter UI instead of hard-coding tag names: the catalogue is curated by
-
-        the team and its tags change without an app release. Requires the user''s JWT.'
-      operationId: list_tags_v1_role_models_tags_get
-      responses:
-        '200':
-          description: An object keyed by role model `kind`, each holding the tags in use for that kind.
-          content:
-            application/json:
-              schema: {}
-        '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-      security:
-      - BearerJWT: []
-  /v1/role-models/recommend:
-    get:
-      tags:
-      - role-models
-      summary: Recommend persona role models for the caller's goal
-      description: 'Suggest role models to preselect before `POST /v1/plan-sessions`.
-
-
-        Pass the goal the user just typed; the API service adds their stored questionnaire answers
-
-        (from `GET /v1/profile`) and asks the Role Model Service to rank the catalogue. `domains` and
-
-        `excluded_constraints` are repeatable query parameters that narrow or veto candidates.
-
-
-        Nothing is persisted: the result is a suggestion the user may take or ignore. Feed a chosen
-
-        `role_model_id` into `persona_role_model_id` (or `trait_role_model_id`) when creating the
-
-        session. Requires the user''s JWT — the recommendation is personalised to the caller.'
-      operationId: recommend_role_models_v1_role_models_recommend_get
-      security:
-      - BearerJWT: []
-      parameters:
-      - name: goal
-        in: query
-        required: false
-        schema:
-          type: string
-          default: ''
-          title: Goal
-      - name: domains
-        in: query
-        required: false
-        schema:
-          type: array
-          items:
-            type: string
-          default: []
-          title: Domains
-      - name: excluded_constraints
-        in: query
-        required: false
-        schema:
-          type: array
-          items:
-            type: string
-          default: []
-          title: Excluded Constraints
-      responses:
-        '200':
-          description: 'Up to a handful of recommendations, best first: `role_model_id`, `name`, and a
-            `reason` written for display next to the suggestion.'
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/RecommendationView'
-                title: Response Recommend Role Models V1 Role Models Recommend Get
-        '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: '`not_found` — the Role Model Service could not resolve part of the request. Treat
-            it as ''no recommendations'' rather than a broken screen.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '422':
-          description: '`invalid_input` — the Role Model Service rejected the assembled payload (for example
-            an unusable `domains` or `excluded_constraints` value).'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: '`domain_error` — the Role Model Service is unreachable or answered with an unexpected
-            status. The screen can fall back to `GET /v1/role-models`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-  /v1/role-models/{role_model_id}:
-    get:
-      tags:
-      - role-models
-      summary: Read one role model in full
-      description: 'The detail view behind a catalogue entry, for the screen where a user picks one.
-
-
-        `content` is the curated document the plan generator reads; its shape belongs to the Role
-
-        Model Service and is not part of this API''s contract, so render it defensively. Requires the
-
-        user''s JWT.'
-      operationId: get_role_model_v1_role_models__role_model_id__get
-      security:
-      - BearerJWT: []
-      parameters:
-      - name: role_model_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Role Model Id
-      responses:
-        '200':
-          description: The full record — `id`, `kind`, `name`, `tags` and the `content` document — proxied
-            from the Role Model Service.
-          content:
-            application/json:
-              schema: {}
-        '401':
-          description: '`unauthorized` — the `Authorization: Bearer <jwt>` header is missing or malformed,
-            or the token has expired.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: '`not_found` — no active role model with this id.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '422':
-          description: Validation Error
-          content: *id001
-    put:
-      tags:
-      - role-models
-      summary: Replace a role model (team only, X-API-Key)
-      description: 'Overwrite one catalogue entry. **Content tooling only — not an app endpoint.**
-
-
-        **Auth: `X-API-Key`, not a JWT.** A full replacement, not a patch: fields left out of the body
-
-        are cleared, so send the whole record. Plans already generated from this role model keep the
-
-        text they were generated with — the edit only affects future generation.'
-      operationId: update_role_model_v1_role_models__role_model_id__put
-      parameters:
-      - name: role_model_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Role Model Id
-      - name: X-API-Key
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Api-Key
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: true
-              title: Body
-      responses:
-        '200':
-          description: The updated record, proxied from the Role Model Service.
-          content:
-            application/json:
-              schema: {}
-        '401':
-          description: '`unauthorized` — the `X-API-Key` header is missing or does not match the Role
-            Model Service''s key. This is a team credential, not the user''s JWT: a signed-in end user
-            cannot reach this endpoint.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: '`not_found` — no active role model with this id.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '422':
-          description: '`invalid_input` — the body is missing `kind` or `name`, or `name` is empty.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-    delete:
-      tags:
-      - role-models
-      summary: Retire a role model (team only, X-API-Key)
-      description: 'Take an entry out of the catalogue. **Content tooling only — not an app endpoint.**
-
-
-        **Auth: `X-API-Key`, not a JWT.** Upstream this deactivates rather than erases: the role model
-
-        stops appearing in `GET /v1/role-models`, while plans and sessions that referenced it stay
-
-        intact. The response carries no body.'
-      operationId: delete_role_model_v1_role_models__role_model_id__delete
-      parameters:
-      - name: role_model_id
-        in: path
-        required: true
-        schema:
-          type: string
-          format: uuid
-          title: Role Model Id
-      - name: X-API-Key
-        in: header
-        required: false
-        schema:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: X-Api-Key
-      responses:
-        '200':
-          description: An empty body. The upstream status is passed through unchanged, so this actually
-            arrives as `204` even though the schema declares `200`.
-          content:
-            application/json:
-              schema: {}
-        '401':
-          description: '`unauthorized` — the `X-API-Key` header is missing or does not match the Role
-            Model Service''s key. This is a team credential, not the user''s JWT: a signed-in end user
-            cannot reach this endpoint.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: '`not_found` — no active role model with this id.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '429':
-          description: '`rate_limited` — too many requests from this caller in the last minute. The response
-            carries `Retry-After`.'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '422':
-          description: Validation Error
-          content: *id001
 components:
   schemas:
-    AnswerInput:
+    AnswerRequest:
       properties:
-        question_id:
+        answer:
           type: string
-          title: Question Id
-        choice:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Choice
-        custom:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Custom
+          title: Answer
+          default: ''
         skipped:
           type: boolean
           title: Skipped
           default: false
       type: object
+      title: AnswerRequest
+      description: Answer, or skip. Skipping is a real answer and is recorded as one.
+    AnswerView:
+      properties:
+        key:
+          type: string
+          title: Key
+        answer:
+          type: string
+          title: Answer
+        skipped:
+          type: boolean
+          title: Skipped
+        answered_at:
+          type: string
+          format: date-time
+          title: Answered At
+      type: object
       required:
-      - question_id
-      title: AnswerInput
-      description: 'One answer: a picked option, a free-text reply, or an explicit skip.'
+      - key
+      - answer
+      - skipped
+      - answered_at
+      title: AnswerView
+    AuthorRoleModelRequest:
+      properties:
+        code:
+          type: string
+          maxLength: 16
+          minLength: 1
+          title: Code
+          examples:
+          - MY-1
+        name:
+          type: string
+          maxLength: 128
+          minLength: 1
+          title: Name
+        vision:
+          type: string
+          minLength: 1
+          title: Vision
+        five_year_path:
+          type: string
+          minLength: 1
+          title: Five Year Path
+        must_accumulate:
+          type: string
+          minLength: 1
+          title: Must Accumulate
+        cost:
+          type: string
+          minLength: 1
+          title: Cost
+          description: 'What this shape costs you. Required: a template with no stated trade-off is a
+            popularity contest entry, won by whichever sounds best out loud.'
+        tags:
+          items:
+            type: string
+          type: array
+          title: Tags
+          examples:
+          - - shape:depth
+            - area:career
+      type: object
+      required:
+      - code
+      - name
+      - vision
+      - five_year_path
+      - must_accumulate
+      - cost
+      title: AuthorRoleModelRequest
+      description: Your own shape. Every field is required — `cost` included, and especially.
     AuthorizeUrlResponse:
       properties:
         authorize_url:
@@ -2964,6 +2163,27 @@ components:
       - items
       - daily_rates
       title: CheckinHistory
+    CheckinRequest:
+      properties:
+        checkin_date:
+          type: string
+          format: date
+          title: Checkin Date
+        results:
+          items:
+            $ref: '#/components/schemas/CheckinResultInput'
+          type: array
+          title: Results
+        note:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Note
+      type: object
+      required:
+      - checkin_date
+      - results
+      title: CheckinRequest
     CheckinResultInput:
       properties:
         task_id:
@@ -2977,11 +2197,6 @@ components:
           - missed
           - skipped
           title: Status
-        reason:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Reason
       type: object
       required:
       - task_id
@@ -3020,110 +2235,17 @@ components:
       - note
       - created_at
       title: CheckinView
-    CheckpointStatus:
+    CreateHypothesisRequest:
       properties:
-        phase_index:
-          type: integer
-          title: Phase Index
-        title:
-          type: string
-          title: Title
-        metric:
-          type: string
-          title: Metric
-        due_at:
-          type: string
-          format: date-time
-          title: Due At
-        status:
-          type: string
-          title: Status
-      type: object
-      required:
-      - phase_index
-      - title
-      - metric
-      - due_at
-      - status
-      title: CheckpointStatus
-      description: One phase milestone, as scheduled into a `checkpoint` task.
-    CreatePlanSessionRequest:
-      properties:
-        goal:
-          type: string
-          title: Goal
-        intake:
-          additionalProperties: true
-          type: object
-          title: Intake
-          default: {}
-        import_ids:
-          items:
-            type: string
-            format: uuid
-          type: array
-          title: Import Ids
-          default: []
-        trait_role_model_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          title: Trait Role Model Id
-        persona_role_model_id:
-          anyOf:
-          - type: string
-            format: uuid
-          - type: 'null'
-          title: Persona Role Model Id
-      type: object
-      required:
-      - goal
-      title: CreatePlanSessionRequest
-    CreateRevisionRequest:
-      properties:
-        strategy:
-          type: string
-          title: Strategy
-        note:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Note
-      type: object
-      required:
-      - strategy
-      title: CreateRevisionRequest
-    CreateRevisionResult:
-      properties:
-        revision_id:
+        fit_verdict_id:
           type: string
           format: uuid
-          title: Revision Id
-        job_id:
-          type: string
-          title: Job Id
+          title: Fit Verdict Id
       type: object
       required:
-      - revision_id
-      - job_id
-      title: CreateRevisionResult
-      description: '202 body: the revision exists, but its proposal is computed by the engine.'
-    CreateSessionResult:
-      properties:
-        session_id:
-          type: string
-          format: uuid
-          title: Session Id
-        job_id:
-          type: string
-          title: Job Id
-      type: object
-      required:
-      - session_id
-      - job_id
-      title: CreateSessionResult
-      description: What both `POST /plan-sessions` and `POST /plan-sessions/{id}/answers` return.
+      - fit_verdict_id
+      title: CreateHypothesisRequest
+      description: Which Fit Verdict you are settling on. The shape comes with it.
     DailyRate:
       properties:
         date:
@@ -3146,6 +2268,72 @@ components:
       - total
       - rate
       title: DailyRate
+    DecisionRequest:
+      properties:
+        outcome:
+          type: string
+          enum:
+          - holds
+          - revise
+          - replace
+          title: Outcome
+      type: object
+      required:
+      - outcome
+      title: DecisionRequest
+      description: Your answer, not the system's.
+    DirectionRunView:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        status:
+          type: string
+          title: Status
+        period_start:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Period Start
+        period_end:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Period End
+        readouts:
+          additionalProperties: true
+          type: object
+          title: Readouts
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+        reports:
+          items:
+            $ref: '#/components/schemas/ReportView'
+          type: array
+          title: Reports
+        verdicts:
+          items:
+            $ref: '#/components/schemas/VerdictView'
+          type: array
+          title: Verdicts
+      type: object
+      required:
+      - id
+      - status
+      - period_start
+      - period_end
+      - readouts
+      - error
+      - reports
+      - verdicts
+      title: DirectionRunView
+      description: Everything the intake screens poll for, in the order they need it.
     ErrorBody:
       properties:
         code:
@@ -3167,30 +2355,32 @@ components:
       required:
       - error
       title: ErrorResponse
+    ExportRequest:
+      properties:
+        target:
+          type: string
+          const: google_calendar
+          title: Target
+          default: google_calendar
+      type: object
+      title: ExportRequest
     ExportRequestResult:
       properties:
         target:
           type: string
           title: Target
         mode:
-          anyOf:
-          - type: string
-          - type: 'null'
+          type: string
           title: Mode
         job_id:
-          anyOf:
-          - type: string
-          - type: 'null'
+          type: string
           title: Job Id
-        markdown:
-          anyOf:
-          - $ref: '#/components/schemas/MarkdownExportResult'
-          - type: 'null'
       type: object
       required:
       - target
+      - mode
+      - job_id
       title: ExportRequestResult
-      description: Either an inline Markdown document, or the handle of the queued push.
     ExportStatusView:
       properties:
         target:
@@ -3218,6 +2408,7 @@ components:
         pending_changes:
           type: integer
           title: Pending Changes
+          default: 0
       type: object
       required:
       - target
@@ -3225,50 +2416,7 @@ components:
       - external_calendar_id
       - last_synced_at
       - error
-      - pending_changes
       title: ExportStatusView
-      description: One row of `plan_exports`, plus how many task changes are still unsynced.
-    FollowupQuestion:
-      properties:
-        id:
-          type: string
-          title: Id
-        metric_id:
-          type: string
-          title: Metric Id
-        text:
-          type: string
-          title: Text
-        options:
-          items:
-            type: string
-          type: array
-          title: Options
-          default: []
-        allow_custom:
-          type: boolean
-          title: Allow Custom
-          default: true
-        allow_skip:
-          type: boolean
-          title: Allow Skip
-          default: true
-      type: object
-      required:
-      - id
-      - metric_id
-      - text
-      title: FollowupQuestion
-      description: 'One follow-up question as the client sees it.
-
-
-        Deliberately a second definition of the Plan Engine''s
-
-        `services.plan_engine.domain.readiness.FollowupQuestion`: services must not import each
-
-        other, so the two sides are bound by the JSON stored in `followup_rounds.questions`,
-
-        exactly as `Pacing` is duplicated between the Plan Engine and the Role Model service.'
     GoogleCalendarImportRequest:
       properties:
         days:
@@ -3299,6 +2447,74 @@ components:
           title: Detail
       type: object
       title: HTTPValidationError
+    HypothesisView:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        version:
+          type: integer
+          title: Version
+        role_model_id:
+          type: string
+          format: uuid
+          title: Role Model Id
+        role_model_code:
+          type: string
+          title: Role Model Code
+        role_model_name:
+          type: string
+          title: Role Model Name
+        fit_verdict_id:
+          type: string
+          format: uuid
+          title: Fit Verdict Id
+        source:
+          type: string
+          title: Source
+        evidence_snapshot:
+          additionalProperties: true
+          type: object
+          title: Evidence Snapshot
+        drop_first:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Drop First
+        answers_count:
+          type: integer
+          title: Answers Count
+        review_date:
+          type: string
+          format: date
+          title: Review Date
+        created_at:
+          type: string
+          format: date-time
+          title: Created At
+        plan_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Plan Id
+      type: object
+      required:
+      - id
+      - version
+      - role_model_id
+      - role_model_code
+      - role_model_name
+      - fit_verdict_id
+      - source
+      - evidence_snapshot
+      - drop_first
+      - answers_count
+      - review_date
+      - created_at
+      title: HypothesisView
+      description: A hypothesis as the app shows it, with the plan it produced.
     ImportView:
       properties:
         id:
@@ -3375,7 +2591,7 @@ components:
       - needs_reauth
       - connected_at
       title: IntegrationView
-      description: One provider connection as seen by the API client (PRD 3.6).
+      description: One provider connection as seen by the API client.
     JobView:
       properties:
         job_id:
@@ -3415,24 +2631,6 @@ components:
       - email
       - is_new_user
       title: LoginResponse
-    MarkdownExportResult:
-      properties:
-        content:
-          type: string
-          title: Content
-        download_url:
-          type: string
-          title: Download Url
-        storage_key:
-          type: string
-          title: Storage Key
-      type: object
-      required:
-      - content
-      - download_url
-      - storage_key
-      title: MarkdownExportResult
-      description: The rendered document, both inline and as a stored object.
     MeResponse:
       properties:
         user_id:
@@ -3447,354 +2645,157 @@ components:
       - user_id
       - email
       title: MeResponse
-    PhaseData:
+    MilestoneView:
       properties:
-        index:
-          type: integer
-          title: Index
-        name:
+        id:
           type: string
-          title: Name
-        week_start:
-          type: integer
-          title: Week Start
-        week_end:
-          type: integer
-          title: Week End
-        focus:
+          format: uuid
+          title: Id
+        key:
           type: string
-          title: Focus
-          default: ''
-        milestone_title:
+          title: Key
+        title:
           type: string
-          title: Milestone Title
-          default: ''
-        milestone_metric:
+          title: Title
+        metric:
           type: string
-          title: Milestone Metric
-          default: ''
+          title: Metric
+        target_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Target Date
+        status:
+          type: string
+          title: Status
+        children:
+          items:
+            $ref: '#/components/schemas/MilestoneView'
+          type: array
+          title: Children
       type: object
       required:
-      - index
-      - name
-      - week_start
-      - week_end
-      title: PhaseData
-      description: One phase of `plans.structure["phases"]`.
-    PhaseRate:
-      properties:
-        phase_index:
-          type: integer
-          title: Phase Index
-        name:
-          type: string
-          title: Name
-        done:
-          type: integer
-          title: Done
-        total:
-          type: integer
-          title: Total
-        rate:
-          type: number
-          title: Rate
-      type: object
-      required:
-      - phase_index
-      - name
-      - done
-      - total
-      - rate
-      title: PhaseRate
-      description: How far one phase of the plan has been worked through.
+      - id
+      - key
+      - title
+      - metric
+      - target_date
+      - status
+      title: MilestoneView
+      description: One node of the tree; `children` is the tree, `key` is its stable identity.
     PlanDetail:
       properties:
         id:
           type: string
           format: uuid
           title: Id
-        session_id:
+        hypothesis_id:
           type: string
           format: uuid
-          title: Session Id
+          title: Hypothesis Id
         title:
           type: string
           title: Title
-        difficulty:
-          type: string
-          title: Difficulty
         status:
           type: string
           title: Status
-        goal_statement:
-          type: string
-          title: Goal Statement
+        start_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Start Date
         duration_weeks:
           type: integer
           title: Duration Weeks
-        start_date:
-          type: string
-          format: date
-          title: Start Date
-        deadline:
-          type: string
-          format: date
-          title: Deadline
-        phases:
-          items:
-            $ref: '#/components/schemas/PhaseData'
-          type: array
-          title: Phases
-        success_criteria:
-          items:
-            type: string
-          type: array
-          title: Success Criteria
-        assumptions:
-          items:
-            type: string
-          type: array
-          title: Assumptions
-        progress:
-          $ref: '#/components/schemas/PlanProgress'
-        exports:
-          items:
-            $ref: '#/components/schemas/ExportStatusView'
-          type: array
-          title: Exports
-      type: object
-      required:
-      - id
-      - session_id
-      - title
-      - difficulty
-      - status
-      - goal_statement
-      - duration_weeks
-      - start_date
-      - deadline
-      - progress
-      title: PlanDetail
-    PlanProgress:
-      properties:
-        total:
-          type: integer
-          title: Total
-        done:
-          type: integer
-          title: Done
-        missed:
-          type: integer
-          title: Missed
-        skipped:
-          type: integer
-          title: Skipped
-        pending:
-          type: integer
-          title: Pending
-        completion_rate:
-          type: number
-          title: Completion Rate
-        phase_rates:
-          items:
-            $ref: '#/components/schemas/PhaseRate'
-          type: array
-          title: Phase Rates
-        checkpoints:
-          items:
-            $ref: '#/components/schemas/CheckpointStatus'
-          type: array
-          title: Checkpoints
-      type: object
-      required:
-      - total
-      - done
-      - missed
-      - skipped
-      - pending
-      - completion_rate
-      title: PlanProgress
-    PlanSessionView:
-      properties:
-        id:
-          type: string
-          format: uuid
-          title: Id
-        status:
-          type: string
-          title: Status
-        round:
-          type: integer
-          title: Round
-        goal:
-          type: string
-          title: Goal
-        questions:
-          items:
-            $ref: '#/components/schemas/FollowupQuestion'
-          type: array
-          title: Questions
-          default: []
-        plans:
-          items:
-            $ref: '#/components/schemas/PlanSummary'
-          type: array
-          title: Plans
-          default: []
         error:
           anyOf:
           - type: string
           - type: 'null'
           title: Error
+        task_counts:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Task Counts
+        structure:
+          additionalProperties: true
+          type: object
+          title: Structure
+        milestones:
+          items:
+            $ref: '#/components/schemas/MilestoneView'
+          type: array
+          title: Milestones
       type: object
       required:
       - id
+      - hypothesis_id
+      - title
       - status
-      - round
-      - goal
-      title: PlanSessionView
+      - start_date
+      - duration_weeks
+      - error
+      title: PlanDetail
+      description: The summary plus the tree and everything the plan had to assume.
+    PlanStatusRequest:
+      properties:
+        status:
+          type: string
+          enum:
+          - active
+          - archived
+          title: Status
+      type: object
+      required:
+      - status
+      title: PlanStatusRequest
     PlanSummary:
       properties:
         id:
           type: string
           format: uuid
           title: Id
+        hypothesis_id:
+          type: string
+          format: uuid
+          title: Hypothesis Id
         title:
           type: string
           title: Title
-        difficulty:
-          type: string
-          title: Difficulty
         status:
           type: string
           title: Status
+        start_date:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Start Date
         duration_weeks:
           type: integer
           title: Duration Weeks
-        start_date:
-          type: string
-          format: date
-          title: Start Date
-        deadline:
-          type: string
-          format: date
-          title: Deadline
-        goal_statement:
-          type: string
-          title: Goal Statement
-        sessions_per_week:
-          type: integer
-          title: Sessions Per Week
-        total_minutes_per_week:
-          type: integer
-          title: Total Minutes Per Week
-        completion_rate:
-          type: number
-          title: Completion Rate
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+        task_counts:
+          additionalProperties:
+            type: integer
+          type: object
+          title: Task Counts
       type: object
       required:
       - id
+      - hypothesis_id
       - title
-      - difficulty
       - status
-      - duration_weeks
       - start_date
-      - deadline
-      - goal_statement
-      - sessions_per_week
-      - total_minutes_per_week
-      - completion_rate
+      - duration_weeks
+      - error
       title: PlanSummary
-      description: One generated plan, condensed to what a chooser screen needs.
-    PlanTaskList:
-      properties:
-        items:
-          items:
-            $ref: '#/components/schemas/PlanTaskView'
-          type: array
-          title: Items
-        total:
-          type: integer
-          title: Total
-      type: object
-      required:
-      - items
-      - total
-      title: PlanTaskList
-    PlanTaskView:
-      properties:
-        id:
-          type: string
-          format: uuid
-          title: Id
-        template_key:
-          type: string
-          title: Template Key
-        week_index:
-          type: integer
-          title: Week Index
-        phase_index:
-          type: integer
-          title: Phase Index
-        occurrence:
-          type: integer
-          title: Occurrence
-        task_type:
-          type: string
-          title: Task Type
-        title:
-          type: string
-          title: Title
-        description:
-          type: string
-          title: Description
-        start_at:
-          type: string
-          format: date-time
-          title: Start At
-        end_at:
-          type: string
-          format: date-time
-          title: End At
-        all_day:
-          type: boolean
-          title: All Day
-        status:
-          type: string
-          title: Status
-        completed_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Completed At
-        missed_reason:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Missed Reason
-        synced:
-          type: boolean
-          title: Synced
-      type: object
-      required:
-      - id
-      - template_key
-      - week_index
-      - phase_index
-      - occurrence
-      - task_type
-      - title
-      - description
-      - start_at
-      - end_at
-      - all_day
-      - status
-      - completed_at
-      - missed_reason
-      - synced
-      title: PlanTaskView
-      description: One plan task as the client sees it.
     PresignRequest:
       properties:
         filename:
@@ -3836,220 +2837,291 @@ components:
       title: PresignResult
     ProfileView:
       properties:
-        user_id:
-          type: string
-          format: uuid
-          title: User Id
-        answers:
-          additionalProperties: true
-          type: object
-          title: Answers
         timezone:
           type: string
           title: Timezone
+        signals:
+          additionalProperties: true
+          type: object
+          title: Signals
+        coverage:
+          additionalProperties: true
+          type: object
+          title: Coverage
         updated_at:
-          type: string
-          format: date-time
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
           title: Updated At
       type: object
       required:
-      - user_id
-      - answers
       - timezone
-      - updated_at
       title: ProfileView
-    RecommendationView:
+      description: The system's read of who the user is now. One per user, revised in place.
+    QuestionView:
       properties:
-        role_model_id:
+        key:
           type: string
-          format: uuid
-          title: Role Model Id
-        name:
+          title: Key
+        prompt:
           type: string
-          title: Name
-        reason:
+          title: Prompt
+        purpose:
           type: string
-          title: Reason
+          title: Purpose
+        choices:
+          items:
+            type: string
+          type: array
+          title: Choices
+        answer:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Answer
+        skipped:
+          type: boolean
+          title: Skipped
+          default: false
+        answered_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Answered At
       type: object
       required:
-      - role_model_id
-      - name
-      - reason
-      title: RecommendationView
-      description: One recommendation as returned to the app.
-    RequestExportRequest:
+      - key
+      - prompt
+      - purpose
+      - choices
+      title: QuestionView
+      description: One question, its stated purpose, and whatever the user has said so far.
+    QuotaView:
       properties:
-        target:
+        drop_first:
           type: string
-          title: Target
-        options:
-          additionalProperties: true
-          type: object
-          title: Options
-          default: {}
+          title: Drop First
+        weekly_minutes:
+          type: integer
+          title: Weekly Minutes
+        effective_from:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Effective From
       type: object
       required:
-      - target
-      title: RequestExportRequest
-    RevisionDiffSummary:
-      properties:
-        added:
-          type: integer
-          title: Added
-          default: 0
-        moved:
-          type: integer
-          title: Moved
-          default: 0
-        removed:
-          type: integer
-          title: Removed
-          default: 0
-        shortened:
-          type: integer
-          title: Shortened
-          default: 0
-        lengthened:
-          type: integer
-          title: Lengthened
-          default: 0
-        unchanged:
-          type: integer
-          title: Unchanged
-          default: 0
-      type: object
-      title: RevisionDiffSummary
-      description: How many entries of each kind the diff holds; the app renders this as a headline.
-    RevisionView:
+      - drop_first
+      - weekly_minutes
+      title: QuotaView
+      description: 'What Q-3 declared: the weekly ceiling, and what gets cut first.'
+    ReconciliationView:
       properties:
         id:
           type: string
           format: uuid
           title: Id
-        plan_id:
+        hypothesis_id:
           type: string
           format: uuid
-          title: Plan Id
-        strategy:
-          type: string
-          title: Strategy
+          title: Hypothesis Id
         status:
           type: string
           title: Status
-        rationale:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Rationale
-        diff:
-          items:
-            $ref: '#/components/schemas/TaskDiffEntry'
-          type: array
-          title: Diff
-        summary:
-          $ref: '#/components/schemas/RevisionDiffSummary'
-        created_at:
+        period_start:
           type: string
-          format: date-time
-          title: Created At
-        decided_at:
+          format: date
+          title: Period Start
+        period_end:
+          type: string
+          format: date
+          title: Period End
+        comparison:
+          additionalProperties: true
+          type: object
+          title: Comparison
+        narrative:
+          type: string
+          title: Narrative
+          default: ''
+        outcome:
           anyOf:
           - type: string
-            format: date-time
           - type: 'null'
-          title: Decided At
+          title: Outcome
+        revision_kind:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Revision Kind
+        error:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Error
+        next_hypothesis_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+          title: Next Hypothesis Id
       type: object
       required:
       - id
-      - plan_id
-      - strategy
+      - hypothesis_id
       - status
-      - rationale
-      - diff
-      - summary
-      - created_at
-      - decided_at
-      title: RevisionView
-    SubmitAnswersRequest:
+      - period_start
+      - period_end
+      title: ReconciliationView
+    ReportView:
       properties:
-        answers:
-          items:
-            $ref: '#/components/schemas/AnswerInput'
-          type: array
-          title: Answers
-          default: []
-      type: object
-      title: SubmitAnswersRequest
-    SubmitCheckinRequest:
-      properties:
-        checkin_date:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        dimension:
+          type: string
+          title: Dimension
+        period_start:
           type: string
           format: date
-          title: Checkin Date
-        results:
-          items:
-            $ref: '#/components/schemas/CheckinResultInput'
-          type: array
-          title: Results
-          default: []
-        note:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Note
+          title: Period Start
+        period_end:
+          type: string
+          format: date
+          title: Period End
+        metrics:
+          additionalProperties: true
+          type: object
+          title: Metrics
+        findings:
+          additionalProperties: true
+          type: object
+          title: Findings
       type: object
       required:
-      - checkin_date
-      title: SubmitCheckinRequest
-    TaskDiffEntry:
+      - id
+      - dimension
+      - period_start
+      - period_end
+      - metrics
+      - findings
+      title: ReportView
+      description: 'One dimension: the numbers, and what they mean.'
+    RoleModelView:
       properties:
-        template_key:
+        id:
           type: string
-          title: Template Key
+          format: uuid
+          title: Id
+        code:
+          type: string
+          title: Code
+        name:
+          type: string
+          title: Name
+        vision:
+          type: string
+          title: Vision
+        five_year_path:
+          type: string
+          title: Five Year Path
+        must_accumulate:
+          type: string
+          title: Must Accumulate
+        cost:
+          type: string
+          title: Cost
+        tags:
+          items:
+            type: string
+          type: array
+          title: Tags
+        author:
+          type: string
+          title: Author
+      type: object
+      required:
+      - id
+      - code
+      - name
+      - vision
+      - five_year_path
+      - must_accumulate
+      - cost
+      - author
+      title: RoleModelView
+      description: One borrowed shape. Six fields, identical for every user, and `cost` is one of them.
+    StartReconciliationRequest:
+      properties:
+        hypothesis_id:
+          type: string
+          format: uuid
+          title: Hypothesis Id
+      type: object
+      required:
+      - hypothesis_id
+      title: StartReconciliationRequest
+    TaskStatusRequest:
+      properties:
+        status:
+          type: string
+          enum:
+          - pending
+          - done
+          - missed
+          - skipped
+          title: Status
+      type: object
+      required:
+      - status
+      title: TaskStatusRequest
+    TaskView:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        milestone_id:
+          type: string
+          format: uuid
+          title: Milestone Id
+        key:
+          type: string
+          title: Key
         week_index:
           type: integer
           title: Week Index
         occurrence:
           type: integer
           title: Occurrence
-        kind:
+        area:
           type: string
-          enum:
-          - added
-          - moved
-          - removed
-          - shortened
-          - lengthened
-          - reduced
-          - unchanged
-          title: Kind
+          title: Area
+        task_type:
+          type: string
+          title: Task Type
         title:
           type: string
           title: Title
-        before:
-          anyOf:
-          - $ref: '#/components/schemas/TaskSnapshot'
-          - type: 'null'
-        after:
-          anyOf:
-          - $ref: '#/components/schemas/TaskSnapshot'
-          - type: 'null'
-      type: object
-      required:
-      - template_key
-      - week_index
-      - occurrence
-      - kind
-      - title
-      - before
-      - after
-      title: TaskDiffEntry
-      description: One entry of `plan_revisions.diff`, aligned on the scheduler's stable task key.
-    TaskSnapshot:
-      properties:
-        title:
+        description:
           type: string
-          title: Title
+          title: Description
+        duration_minutes:
+          type: integer
+          title: Duration Minutes
+        status:
+          type: string
+          title: Status
+        completed_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Completed At
         start_at:
           type: string
           format: date-time
@@ -4063,66 +3135,23 @@ components:
           title: All Day
       type: object
       required:
+      - id
+      - milestone_id
+      - key
+      - week_index
+      - occurrence
+      - area
+      - task_type
       - title
+      - description
+      - duration_minutes
+      - status
+      - completed_at
       - start_at
       - end_at
       - all_day
-      title: TaskSnapshot
-      description: 'One side of a diff entry: how a task looks before or after the revision.'
-    UpdatePlanRequest:
-      properties:
-        title:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Title
-        status:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Status
-      type: object
-      title: UpdatePlanRequest
-    UpdatePlanTaskRequest:
-      properties:
-        status:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Status
-        start_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: Start At
-        end_at:
-          anyOf:
-          - type: string
-            format: date-time
-          - type: 'null'
-          title: End At
-        missed_reason:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Missed Reason
-      type: object
-      title: UpdatePlanTaskRequest
-    UpdateProfileRequest:
-      properties:
-        answers:
-          additionalProperties: true
-          type: object
-          title: Answers
-          default: {}
-        timezone:
-          anyOf:
-          - type: string
-          - type: 'null'
-          title: Timezone
-      type: object
-      title: UpdateProfileRequest
+      title: TaskView
+      description: One task, flat, with where it landed.
     ValidationError:
       properties:
         loc:
@@ -4149,6 +3178,58 @@ components:
       - msg
       - type
       title: ValidationError
+    VerdictView:
+      properties:
+        id:
+          type: string
+          format: uuid
+          title: Id
+        role_model_id:
+          type: string
+          format: uuid
+          title: Role Model Id
+        role_model_code:
+          type: string
+          title: Role Model Code
+        role_model_name:
+          type: string
+          title: Role Model Name
+        cost:
+          type: string
+          title: Cost
+        fit:
+          type: string
+          title: Fit
+        verdict:
+          type: string
+          title: Verdict
+        note:
+          type: string
+          title: Note
+        evidence:
+          items:
+            additionalProperties: true
+            type: object
+          type: array
+          title: Evidence
+        probe:
+          additionalProperties: true
+          type: object
+          title: Probe
+      type: object
+      required:
+      - id
+      - role_model_id
+      - role_model_code
+      - role_model_name
+      - cost
+      - fit
+      - verdict
+      - note
+      - evidence
+      - probe
+      title: VerdictView
+      description: One Role Model held against this user's evidence, with its probe.
   securitySchemes:
     BearerJWT:
       type: http
@@ -4159,28 +3240,31 @@ tags:
   description: Liveness. Unauthenticated and exempt from rate limiting.
 - name: auth
   description: Google sign-in. Exchanges an OAuth code for our own JWT.
-- name: profile
-  description: The user's timezone and questionnaire answers.
 - name: imports
-  description: Bringing context in. Files go up through a presigned URL and are parsed on the queue; a
-    connected Google Calendar can be pulled directly.
+  description: Bringing the data in. Files go up through a presigned URL and are parsed on the queue;
+    a connected Google Calendar can be pulled directly. Every finished parse revises the one Profile.
 - name: integrations
   description: OAuth connections. Sign-in and calendar access are separate grants — the app never sees
     a Google token, only our JWT.
 - name: files
   description: Presigned upload and download for the local storage backend. Authorised by the signature
     in the URL, not by a JWT.
-- name: plan-sessions
-  description: 'Turning a goal into plans: create a session, answer at most two rounds of follow-up questions,
-    receive three difficulty variants.'
+- name: direction
+  description: Station 1. The Profile, the analysis run, its Reports, and the Fit Verdict for every shape
+    — five cited evidence items and one probe each.
+- name: questions
+  description: The three constraint questions, always skippable, and the quota Q-3 sets.
+- name: role-models
+  description: The borrowed shapes, each stating its cost. Users may write their own.
+- name: hypotheses
+  description: 'The Direction Hypothesis: append-only, dated, sourced, and never overwritten.'
 - name: plans
-  description: 'Everything after generation: lifecycle, the built-in todo, daily check-ins, revisions,
-    and export to Google Calendar or Markdown.'
+  description: Station 2. The milestone tree, the flat tasks, the schedule, check-ins, and export to the
+    calendar the user already reads.
+- name: reconciliations
+  description: Station 3. Behaviour held against the hypothesis, and the question it asks.
 - name: jobs
   description: Status of queued work.
-- name: role-models
-  description: Trait and persona role models. Reads are open to signed-in users; writes are team-only
-    and authenticate with `X-API-Key`.
 servers:
 - url: http://127.0.0.1:8000
   description: Local development

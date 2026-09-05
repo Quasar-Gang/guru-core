@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Smoke-test guru-core's local OpenAI-compatible structured-output path."""
+"""Smoke-test a local OpenAI-compatible structured-output path.
+
+Sends the hardest of guru-core's five schemas — the Fit Verdict — because it is the one
+that carries real invariants: every shape scored, exactly five evidence items, at least one
+for and at least one against, and every citation resolving to a dimension that exists.
+
+A provider that satisfies the JSON Schema and still breaks those rules is exactly what the
+application's validate-retry-degrade chain exists for, so this script checks both layers and
+reports which one failed.
+"""
 
 from __future__ import annotations
 
@@ -9,54 +18,106 @@ import sys
 import time
 import urllib.error
 import urllib.request
-from typing import NoReturn
+from typing import Any, NoReturn
 
 BASE_URL = os.environ.get("LLM_BASE_URL", "http://127.0.0.1:11434/v1").rstrip("/")
 MODEL = os.environ.get("LLM_MODEL", "qwen3.5:9b")
-METRIC_IDS = ["baseline", "capacity", "health_constraints", "horizon", "availability"]
 
-SCHEMA = {
+CODES = ["S-1", "S-2", "S-3"]
+DIMENSIONS = ["work", "learning", "unclassified"]
+EVIDENCE_ITEMS = 5
+
+SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
+    "required": ["verdicts"],
     "properties": {
-        "ready": {"type": "boolean"},
-        "missing": {
+        "verdicts": {
             "type": "array",
-            "items": {"type": "string", "enum": METRIC_IDS},
-        },
-        "questions": {
-            "type": "array",
-            "maxItems": 5,
+            "minItems": len(CODES),
+            "maxItems": len(CODES),
             "items": {
                 "type": "object",
                 "additionalProperties": False,
+                "required": ["role_model_code", "fit", "verdict", "note", "evidence", "probe"],
                 "properties": {
-                    "metric_id": {"type": "string", "enum": METRIC_IDS},
-                    "text": {"type": "string", "minLength": 1},
-                    "options": {
+                    "role_model_code": {"type": "string", "enum": CODES},
+                    "fit": {
+                        "type": "string",
+                        "enum": [
+                            "strongly_consistent",
+                            "partly_consistent",
+                            "moderate_gap",
+                            "large_gap",
+                            "largest_gap",
+                            "runs_opposite",
+                        ],
+                    },
+                    "verdict": {"type": "string", "minLength": 1},
+                    "note": {"type": "string", "minLength": 1},
+                    "evidence": {
                         "type": "array",
-                        "minItems": 3,
-                        "maxItems": 3,
-                        "items": {"type": "string", "minLength": 1},
+                        "minItems": EVIDENCE_ITEMS,
+                        "maxItems": EVIDENCE_ITEMS,
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "required": ["stance", "text", "cites"],
+                            "properties": {
+                                "stance": {"type": "string", "enum": ["for", "against"]},
+                                "text": {"type": "string", "minLength": 1},
+                                "cites": {
+                                    "type": "object",
+                                    "additionalProperties": False,
+                                    "required": ["dimension", "fact"],
+                                    "properties": {
+                                        "dimension": {"type": "string", "enum": DIMENSIONS},
+                                        "fact": {"type": "string", "minLength": 1},
+                                    },
+                                },
+                            },
+                        },
+                    },
+                    "probe": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["statement", "cost"],
+                        "properties": {
+                            "statement": {"type": "string", "minLength": 1},
+                            "cost": {"type": "string", "minLength": 1},
+                        },
                     },
                 },
-                "required": ["metric_id", "text", "options"],
             },
-        },
+        }
     },
-    "required": ["ready", "missing", "questions"],
 }
 
-PROMPT = (
-    "你是 guru-core 的計畫完整度評估器。\n"
-    "使用者目標：我想在 12 週後跑完 5 公里，除此之外沒有提供資料。\n"
-    "可用 metric_id 只有 baseline、capacity、health_constraints、horizon、availability。\n"
-    "missing 只能放缺少的 metric_id；每個缺項要在 questions 產生一題，"
-    "以繁體中文提問，每題恰好三個具體選項。\n"
-    "只要 missing 非空，ready 必須是 false；"
-    "只有 missing 與 questions 都為空時 ready 才能是 true。\n"
-    "只輸出符合提供之 JSON schema 的 JSON，不要 Markdown 或額外說明。"
-)
+PROMPT = """You score borrowed life shapes against one person's data. You never choose.
+
+The reports for this person, over 26 weeks:
+- work: 62% of tracked time, present every week, longest unbroken run 26 weeks
+- learning: 5% of tracked time, one Thursday group, 11 weeks unbroken
+- unclassified: 16% of tracked time, roughly 118 hours, fits no named dimension
+
+The shapes to score:
+- S-1 The Deep Specialist. Go deep on one thing and be known for it. Cost: switching tracks
+  gets expensive as depth grows.
+- S-2 The Zero-to-One Builder. Always making something that did not exist. Cost: little
+  reaches maturity.
+- S-3 The Independent Operator. Set your own hours, cover your own costs. Cost: unstable
+  income and all the admin is yours.
+
+Rules, all of which are checked:
+1. Score every shape listed above, using its code verbatim.
+2. Each verdict carries exactly five evidence items.
+3. Each verdict has at least one item with stance "for" and at least one with "against".
+   This holds for the best-fitting shape and the worst-fitting one alike.
+4. Every cites.dimension is one of: work, learning, unclassified.
+5. The probe is one experiment finishable in a quarter, and states its own cost.
+
+Return only JSON matching the provided schema. No Markdown, no explanation.
+"""
 
 
 def fail(message: str) -> NoReturn:
@@ -64,88 +125,82 @@ def fail(message: str) -> NoReturn:
     raise SystemExit(1)
 
 
-def validate(value: object) -> dict[str, object]:
-    if not isinstance(value, dict):
-        fail("model content is not a JSON object")
-    if set(value) != {"ready", "missing", "questions"}:
-        fail(f"unexpected top-level keys: {sorted(value)}")
-    if not isinstance(value["ready"], bool):
-        fail("ready is not boolean")
-    if not isinstance(value["missing"], list) or not all(
-        isinstance(item, str) for item in value["missing"]
-    ):
-        fail("missing is not string[]")
-    questions = value["questions"]
-    if not isinstance(questions, list) or len(questions) > 5:
-        fail("questions is not an array of at most five items")
-    for index, question in enumerate(questions):
-        if not isinstance(question, dict):
-            fail(f"questions[{index}] is not an object")
-        if set(question) != {"metric_id", "text", "options"}:
-            fail(f"questions[{index}] has unexpected keys")
-        if (
-            question["metric_id"] not in METRIC_IDS
-            or not isinstance(question["text"], str)
-            or not question["text"].strip()
-        ):
-            fail(f"questions[{index}] has an invalid metric_id or empty text")
-        options = question["options"]
-        if (
-            not isinstance(options, list)
-            or len(options) != 3
-            or not all(isinstance(option, str) and option.strip() for option in options)
-        ):
-            fail(f"questions[{index}].options must contain exactly three strings")
-    if value["ready"] is False:
-        if not questions:
-            fail("not-ready output must contain at least one question")
-        if set(value["missing"]) != {question["metric_id"] for question in questions}:
-            fail("missing metric IDs do not match question metric IDs")
-    elif value["missing"] or questions:
-        fail("ready output must not contain missing metrics or questions")
-    return value
+def business_rules(payload: dict[str, Any]) -> list[str]:
+    """The same invariants `services/engine/domain/verdict.py` enforces in production."""
+    verdicts = payload.get("verdicts", [])
+    scored = [item.get("role_model_code") for item in verdicts]
+    violations = [f"shape {code!r} was not scored" for code in CODES if code not in scored]
+    if len(scored) != len(set(scored)):
+        violations.append("a shape was scored more than once")
+
+    for item in verdicts:
+        prefix = f"verdict for {item.get('role_model_code')!r}"
+        evidence = item.get("evidence", [])
+        if len(evidence) != EVIDENCE_ITEMS:
+            violations.append(f"{prefix} has {len(evidence)} evidence items, not {EVIDENCE_ITEMS}")
+        stances = {entry.get("stance") for entry in evidence}
+        if not {"for", "against"} <= stances:
+            violations.append(f"{prefix} needs at least one 'for' and one 'against'")
+        violations += [
+            f"{prefix} cites {entry['cites'].get('dimension')!r}, which has no report"
+            for entry in evidence
+            if entry.get("cites", {}).get("dimension") not in DIMENSIONS
+        ]
+        probe = item.get("probe", {})
+        if not str(probe.get("cost", "")).strip():
+            violations.append(f"{prefix} has a probe with no stated cost")
+    return violations
 
 
-payload = {
-    "model": MODEL,
-    "messages": [{"role": "user", "content": PROMPT}],
-    "stream": False,
-    "temperature": 0.2,
-    "max_tokens": 1200,
-    "reasoning_effort": "none",
-    "response_format": {
-        "type": "json_schema",
-        "json_schema": {
-            "name": "readiness_output",
-            "strict": True,
-            "schema": SCHEMA,
+def main() -> None:
+    payload = {
+        "model": MODEL,
+        "messages": [{"role": "user", "content": PROMPT}],
+        "stream": False,
+        "temperature": 0.3,
+        "max_tokens": 6000,
+        "reasoning_effort": "none",
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "fit_verdict_set", "strict": True, "schema": SCHEMA},
         },
-    },
-}
+    }
+    request = urllib.request.Request(
+        f"{BASE_URL}/chat/completions",
+        data=json.dumps(payload).encode(),
+        headers={"Authorization": "Bearer ollama", "Content-Type": "application/json"},
+        method="POST",
+    )
 
-request = urllib.request.Request(
-    f"{BASE_URL}/chat/completions",
-    data=json.dumps(payload).encode(),
-    headers={"Authorization": "Bearer ollama", "Content-Type": "application/json"},
-    method="POST",
-)
-started = time.monotonic()
-try:
-    with urllib.request.urlopen(request, timeout=240) as response:
-        envelope = json.load(response)
-except urllib.error.HTTPError as error:
-    fail(f"HTTP {error.code}: {error.read().decode(errors='replace')}")
-except (urllib.error.URLError, TimeoutError) as error:
-    fail(f"request failed: {error}")
+    started = time.monotonic()
+    try:
+        with urllib.request.urlopen(request, timeout=240) as response:  # noqa: S310 - local
+            envelope = json.load(response)
+    except urllib.error.HTTPError as error:
+        fail(f"HTTP {error.code}: {error.read().decode(errors='replace')}")
+    except (urllib.error.URLError, TimeoutError) as error:
+        fail(f"request failed: {error}")
 
-elapsed = time.monotonic() - started
-try:
-    content = envelope["choices"][0]["message"]["content"]
-    result = validate(json.loads(content))
-except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
-    fail(f"invalid OpenAI-compatible response: {error}")
+    elapsed = time.monotonic() - started
+    try:
+        result = json.loads(envelope["choices"][0]["message"]["content"])
+    except (KeyError, IndexError, TypeError, json.JSONDecodeError) as error:
+        fail(f"invalid OpenAI-compatible response: {error}")
 
-usage = envelope.get("usage", {})
-print("PASS: Traditional Chinese structured output is valid")
-print(f"model={MODEL} elapsed_seconds={elapsed:.2f} usage={json.dumps(usage)}")
-print(json.dumps(result, ensure_ascii=False, indent=2))
+    violations = business_rules(result)
+    if violations:
+        # Well-formed and wrong is the interesting failure: it is why the application
+        # validates twice and feeds the violation back rather than trusting the schema.
+        print("SCHEMA OK, BUSINESS RULES FAILED", file=sys.stderr)
+        for message in violations:
+            print(f"  - {message}", file=sys.stderr)
+        raise SystemExit(1)
+
+    usage = envelope.get("usage", {})
+    print("PASS: structured output is valid, and every invariant holds")
+    print(f"model={MODEL} elapsed_seconds={elapsed:.2f} usage={json.dumps(usage)}")
+    print(json.dumps(result, indent=2))
+
+
+if __name__ == "__main__":
+    main()

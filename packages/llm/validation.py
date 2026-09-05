@@ -1,4 +1,4 @@
-"""Validate, retry with feedback, then degrade (PRD 7.5).
+"""Validate, retry with feedback, then degrade.
 
 A well-formed response is not necessarily a sensible one, so both layers must pass.
 """

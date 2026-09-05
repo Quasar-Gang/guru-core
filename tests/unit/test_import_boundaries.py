@@ -1,3 +1,5 @@
+"""The layering rules are enforced by tooling, so the test suite runs the tooling."""
+
 import subprocess
 
 

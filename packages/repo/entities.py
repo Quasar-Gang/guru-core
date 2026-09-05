@@ -1,8 +1,12 @@
 """The data types on the repo boundary — all frozen Pydantic models.
 
 Read types (`User`, `Plan`, ...) mirror the ORM columns in `models.py` one for one. Write
-types (`NewPlan`, `NewPlanTask`, `TaskStatusUpdate`, `LlmCallLog`) carry only the fields a
-caller has to supply. ORM objects must never cross the repo boundary.
+types (`NewReport`, `NewMilestone`, `NewTask`, ...) carry only the fields a caller has to
+supply. ORM objects must never cross the repo boundary.
+
+JSONB columns stay as plain dicts here on purpose. The shapes inside them — an evidence
+item, a probe, a milestone tree — are domain concepts with domain invariants, so they are
+typed and validated in `services/*/domain` and only then handed over as data.
 """
 
 from __future__ import annotations
@@ -20,18 +24,14 @@ class _Entity(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
+# --- Identity and intake -----------------------------------------------------
+
+
 class User(_Entity):
     id: UUID
     email: str
     google_sub: str
     created_at: datetime
-
-
-class Profile(_Entity):
-    user_id: UUID
-    answers: dict[str, Any]
-    timezone: str
-    updated_at: datetime
 
 
 class OAuthConnection(_Entity):
@@ -65,83 +65,161 @@ class Document(_Entity):
     created_at: datetime
 
 
+class Profile(_Entity):
+    user_id: UUID
+    timezone: str
+    signals: dict[str, Any]
+    coverage: dict[str, Any]
+    source_import_ids: list[UUID]
+    updated_at: datetime
+
+
+# --- Station 1 ---------------------------------------------------------------
+
+
+class DirectionRun(_Entity):
+    id: UUID
+    user_id: UUID
+    status: str
+    period_start: date | None
+    period_end: date | None
+    readouts: dict[str, Any]
+    error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class Report(_Entity):
+    id: UUID
+    user_id: UUID
+    run_id: UUID
+    dimension: str
+    period_start: date
+    period_end: date
+    metrics: dict[str, Any]
+    findings: dict[str, Any]
+    created_at: datetime
+
+
 class RoleModel(_Entity):
     id: UUID
-    kind: str
+    code: str
     name: str
+    vision: str
+    five_year_path: str
+    must_accumulate: str
+    cost: str
     tags: list[str]
-    content: dict[str, Any]
+    author: str
+    author_user_id: UUID | None
     active: bool
     version: int
     created_at: datetime
     updated_at: datetime
 
 
-class PlanSession(_Entity):
+class FitVerdict(_Entity):
     id: UUID
     user_id: UUID
-    trait_role_model_id: UUID | None
-    persona_role_model_id: UUID | None
-    goal: str
-    intake: dict[str, Any]
-    import_ids: list[UUID]
-    use_calendar: bool
-    status: str
-    round: int
-    context_snapshot: dict[str, Any] | None
-    error: str | None
+    run_id: UUID
+    role_model_id: UUID
+    fit: str
+    verdict: str
+    note: str
+    evidence: list[dict[str, Any]]
+    probe: dict[str, Any]
     created_at: datetime
+
+
+class QuestionAnswer(_Entity):
+    id: UUID
+    user_id: UUID
+    question_key: str
+    answer: str
+    skipped: bool
+    answered_at: datetime
+
+
+class Quota(_Entity):
+    user_id: UUID
+    drop_first: str
+    weekly_minutes: int
+    effective_from: date
     updated_at: datetime
 
 
-class FollowupRound(_Entity):
+class DirectionHypothesis(_Entity):
     id: UUID
-    session_id: UUID
-    round_no: int
-    questions: list[dict[str, Any]]
-    answers: list[dict[str, Any]] | None
-    answered_at: datetime | None
+    user_id: UUID
+    version: int
+    role_model_id: UUID
+    fit_verdict_id: UUID
+    source: str
+    evidence_snapshot: dict[str, Any]
+    drop_first: str | None
+    answers_count: int
+    review_date: date
     created_at: datetime
+
+
+# --- Station 2 ---------------------------------------------------------------
 
 
 class Plan(_Entity):
     id: UUID
     user_id: UUID
-    session_id: UUID
+    hypothesis_id: UUID
     title: str
-    difficulty: str
     status: str
-    goal_statement: str
+    start_date: date | None
     duration_weeks: int
-    start_date: date
-    deadline: date
-    template: dict[str, Any]
     structure: dict[str, Any]
+    error: str | None
     activated_at: datetime | None
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
 
-class PlanTask(_Entity):
+class Milestone(_Entity):
     id: UUID
     plan_id: UUID
-    template_key: str
+    parent_id: UUID | None
+    key: str
+    title: str
+    metric: str
+    target_date: date | None
+    depth: int
+    position: int
+    status: str
+
+
+class Task(_Entity):
+    id: UUID
+    plan_id: UUID
+    milestone_id: UUID
+    key: str
     week_index: int
-    phase_index: int
     occurrence: int
+    area: str
     task_type: str
     title: str
     description: str
+    duration_minutes: int
+    status: str
+    completed_at: datetime | None
+    sort_order: int
+
+
+class ScheduleSlot(_Entity):
+    id: UUID
+    plan_id: UUID
+    task_id: UUID
     start_at: datetime
     end_at: datetime
     all_day: bool
-    status: str
-    completed_at: datetime | None
-    missed_reason: str | None
     external_ref: str | None
     synced_at: datetime | None
-    sort_order: int
 
 
 class Checkin(_Entity):
@@ -151,20 +229,6 @@ class Checkin(_Entity):
     task_results: list[dict[str, Any]]
     note: str | None
     created_at: datetime
-
-
-class PlanRevision(_Entity):
-    id: UUID
-    plan_id: UUID
-    trigger: str
-    strategy: str
-    trigger_detail: dict[str, Any] | None
-    proposed_tasks: list[dict[str, Any]] | None
-    diff: list[dict[str, Any]] | None
-    rationale: str | None
-    status: str
-    created_at: datetime
-    decided_at: datetime | None
 
 
 class PlanExport(_Entity):
@@ -178,53 +242,108 @@ class PlanExport(_Entity):
     created_at: datetime
 
 
+# --- Station 3 ---------------------------------------------------------------
+
+
+class Reconciliation(_Entity):
+    id: UUID
+    user_id: UUID
+    hypothesis_id: UUID
+    status: str
+    period_start: date
+    period_end: date
+    comparison: dict[str, Any]
+    narrative: str
+    outcome: str | None
+    revision_kind: str | None
+    error: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
 # --- Write-side input models -------------------------------------------------
 
 
-class NewPlan(_Entity):
-    """Input to `PlanRepo.create_many`."""
+class NewReport(_Entity):
+    """Input to `ReportRepo.replace_for_run`; `user_id` and `run_id` are method arguments."""
 
-    user_id: UUID
-    session_id: UUID
+    dimension: str
+    period_start: date
+    period_end: date
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    findings: dict[str, Any] = Field(default_factory=dict)
+
+
+class NewFitVerdict(_Entity):
+    """Input to `FitVerdictRepo.replace_for_run`."""
+
+    role_model_id: UUID
+    fit: str
+    verdict: str
+    note: str = ""
+    evidence: list[dict[str, Any]] = Field(default_factory=list)
+    probe: dict[str, Any] = Field(default_factory=dict)
+
+
+class NewRoleModel(_Entity):
+    """Input to `RoleModelRepo.upsert`."""
+
+    code: str
+    name: str
+    vision: str
+    five_year_path: str
+    must_accumulate: str
+    cost: str
+    tags: list[str] = Field(default_factory=list)
+    author: str = "system"
+    author_user_id: UUID | None = None
+
+
+class NewMilestone(_Entity):
+    """Input to `PlanTreeRepo.replace_tree`. `parent_key` names the parent by its key, so
+    the whole tree can be handed over in one flat list without pre-assigned ids.
+    """
+
+    key: str
+    parent_key: str | None = None
     title: str
-    difficulty: str
-    status: str = "draft"
-    goal_statement: str
-    duration_weeks: int
-    start_date: date
-    deadline: date
-    template: dict[str, Any] = Field(default_factory=dict)
-    structure: dict[str, Any] = Field(default_factory=dict)
+    metric: str = ""
+    target_date: date | None = None
+    depth: int = 0
+    position: int = 0
 
 
-class NewPlanTask(_Entity):
-    """Input to `PlanTaskRepo.replace_all` / `replace_from`; `plan_id` is a method argument."""
+class NewTask(_Entity):
+    """Input to `PlanTreeRepo.replace_tree`; `milestone_key` binds it to its Milestone."""
 
-    template_key: str
+    milestone_key: str
+    key: str
     week_index: int
-    phase_index: int = 0
     occurrence: int = 0
+    area: str
     task_type: str
     title: str
     description: str = ""
+    duration_minutes: int = 0
+    sort_order: int = 0
     start_at: datetime
     end_at: datetime
     all_day: bool = False
-    status: str = "pending"
-    completed_at: datetime | None = None
-    missed_reason: str | None = None
-    external_ref: str | None = None
-    synced_at: datetime | None = None
-    sort_order: int = 0
 
 
 class TaskStatusUpdate(_Entity):
-    """One entry of the input to `PlanTaskRepo.bulk_set_status`."""
+    """One entry of the input to `TaskRepo.bulk_set_status`."""
 
     task_id: UUID
     status: str
     completed_at: datetime | None = None
-    missed_reason: str | None = None
+
+
+class ScheduledTaskRow(_Entity):
+    """A Task joined to its ScheduleSlot — what every read of a Plan's schedule returns."""
+
+    task: Task
+    slot: ScheduleSlot
 
 
 class LlmCallLog(_Entity):

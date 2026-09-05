@@ -1,0 +1,59 @@
+{
+  "plan": {
+    "title": "One quarter to run the probe",
+    "duration_weeks": 12,
+    "assumptions": [
+      "Evenings are the only reliable free block."
+    ],
+    "success_criteria": [
+      "The probe is finished and submitted by week 12."
+    ],
+    "milestones": [
+      {
+        "key": "probe",
+        "title": "Run the probe end to end",
+        "metric": "Submitted somewhere public",
+        "target_week": 11,
+        "children": [
+          {
+            "key": "draft",
+            "title": "First full draft",
+            "metric": "Covers problem, process, outcome",
+            "target_week": 5,
+            "children": []
+          }
+        ]
+      }
+    ],
+    "tasks": [
+      {
+        "key": "writing_block",
+        "milestone_key": "draft",
+        "title": "Writing block",
+        "description": "One section, start to finish.",
+        "task_type": "session",
+        "area": "career",
+        "day_hint": "weekday",
+        "slot_hint": "evening",
+        "duration_minutes": 60,
+        "times_per_week": 2,
+        "week_start": 0,
+        "week_end": 11
+      },
+      {
+        "key": "weekly_walk",
+        "milestone_key": "probe",
+        "title": "Long walk",
+        "description": "One unhurried hour outdoors.",
+        "task_type": "habit",
+        "area": "health",
+        "day_hint": "weekend",
+        "slot_hint": "morning",
+        "duration_minutes": 60,
+        "times_per_week": 1,
+        "week_start": 0,
+        "week_end": 11
+      }
+    ]
+  }
+}

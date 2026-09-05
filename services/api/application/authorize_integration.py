@@ -1,4 +1,4 @@
-"""Hand the client the Google consent URL for calendar and spreadsheets access (PRD 3.6)."""
+"""Hand the client the Google consent URL for calendar access."""
 
 from secrets import token_urlsafe
 from uuid import UUID
@@ -10,7 +10,7 @@ __all__ = ["CALENDAR_SCOPES", "GOOGLE_PROVIDER", "AuthorizeIntegration"]
 
 GOOGLE_PROVIDER = "google"
 
-#: One consent covers calendar import, calendar export, and the Sheets export (PRD 3.6).
+#: One consent covers reading the user's calendar and writing the plan's own back to it.
 CALENDAR_SCOPES = [
     "https://www.googleapis.com/auth/calendar.readonly",
     "https://www.googleapis.com/auth/calendar.events",

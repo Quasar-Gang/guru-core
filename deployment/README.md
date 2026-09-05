@@ -27,7 +27,7 @@ override with `ssh_host=` / `remote_dir=` if it moves.
 
 ## local
 
-Builds from the working tree and publishes the API on 8000, the role-model
+Builds from the working tree and publishes the API on 8000, the catalog
 service on 8001, and PostgreSQL / Redis on **5433 / 6380** — the offset ports
 keep them clear of whatever is already running on 5432 / 6379. Data lives in
 named volumes; `docker compose down -v` is the reset button.
@@ -39,7 +39,7 @@ runs without Google credentials or an LLM provider.
 
 Single Droplet, no reverse proxy and no TLS: there is no domain yet, so the API
 publishes straight onto the public interface and is reached at
-`http://<droplet-ip>:8000`. PostgreSQL, Redis and the role-model service stay on
+`http://<droplet-ip>:8000`. PostgreSQL, Redis and the catalog service stay on
 the internal compose network and are never published.
 
 State is in bind mounts under `deployment/production/data/` (`postgres`, `redis`,

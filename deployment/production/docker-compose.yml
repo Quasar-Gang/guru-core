@@ -2,9 +2,10 @@
 #
 #   make deploy-up env=production
 #
-# No reverse proxy and no TLS: the API is published straight onto the Droplet's
-# public interface over HTTP, reached by IP. Postgres, Redis and the role-model
-# service stay on the internal compose network and are never published.
+# Caddy terminates TLS on 80/443 and is the only thing on the public interface.
+# The API binds to loopback so a frontend running on the host can reach it
+# directly; Postgres, Redis and the catalog service stay on the internal
+# compose network and are never published at all.
 #
 # Every value comes from deployment/production/.env.production — copy
 # .env.production.example and fill it in. State lives in bind mounts under
@@ -34,8 +35,7 @@ x-app: &app
     GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
     GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-}
-    ROLE_MODEL_API_KEY: ${ROLE_MODEL_API_KEY}
-    ROLE_MODEL_BASE_URL: http://role-model:8001
+    CATALOG_API_KEY: ${CATALOG_API_KEY}
     RATE_LIMIT_PER_MINUTE: ${RATE_LIMIT_PER_MINUTE:-60}
     # Never 1 here: it would let anyone sign in as anyone.
     ALLOW_FAKE_LOGIN: "0"
@@ -57,6 +57,28 @@ x-app: &app
       condition: service_healthy
 
 services:
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: guru-core-production-caddy
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      API_DOMAIN: ${API_DOMAIN}
+      APP_DOMAIN: ${APP_DOMAIN:-}
+    # Lets the (commented) frontend block reach a process on the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./data/caddy/data:/data
+      - ./data/caddy/config:/config
+
   postgres:
     image: postgres:15
     container_name: guru-core-production-postgres
@@ -94,8 +116,9 @@ services:
       dockerfile: Dockerfile
     command: ["cmd.api_server"]
     ports:
-      # Bind on the public interface — this is the only way in.
-      - "${API_BIND:-0.0.0.0}:${API_PORT:-8000}:8000"
+      # Loopback only: Caddy reaches it over the compose network, and a frontend
+      # on the host reaches it here. Nothing from outside the Droplet does.
+      - "${API_BIND:-127.0.0.1}:${API_PORT:-8000}:8000"
     healthcheck:
       # The image has no curl; urllib is already there.
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()"]
@@ -112,9 +135,9 @@ services:
   engine:
     <<: *app
     container_name: guru-core-production-engine
-    command: ["cmd.plan_engine_worker"]
+    command: ["cmd.engine_worker"]
 
-  role-model:
+  catalog:
     <<: *app
-    container_name: guru-core-production-role-model
-    command: ["cmd.role_model_server"]
+    container_name: guru-core-production-catalog
+    command: ["cmd.catalog_server"]

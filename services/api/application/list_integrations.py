@@ -12,7 +12,7 @@ __all__ = ["IntegrationView", "ListIntegrations", "to_view"]
 
 
 class IntegrationView(BaseModel):
-    """One provider connection as seen by the API client (PRD 3.6)."""
+    """One provider connection as seen by the API client."""
 
     provider: str
     connected: bool

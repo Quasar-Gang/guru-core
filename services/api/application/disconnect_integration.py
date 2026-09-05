@@ -1,4 +1,4 @@
-"""Disconnect a provider: revoke the token upstream and mark the row revoked (PRD 3.6)."""
+"""Disconnect a provider: revoke the token upstream and mark the row revoked."""
 
 from uuid import UUID
 

@@ -1,9 +1,9 @@
-"""Seed `role_models` from `seeds/role_models/*.yaml`. No business logic here."""
+"""Load the six shipped Role Models from `seeds/`. No business logic here."""
 
 import asyncio
 
-from services.role_model.container import build_container, seed_role_models
+from services.catalog.container import build_container
 
 if __name__ == "__main__":
-    written = asyncio.run(seed_role_models(build_container()))
+    written = asyncio.run(build_container().seed_catalog())
     print(f"upserted {len(written)} role models")

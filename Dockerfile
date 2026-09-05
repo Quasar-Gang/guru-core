@@ -1,4 +1,5 @@
-# One image, six roles. The entrypoint decides which (PRD 8.1).
+# One image, every role. The entrypoint decides which: api_server, api_worker,
+# engine_worker, catalog_server, seed_role_models, check_llm.
 FROM python:3.12-slim AS base
 
 ENV PYTHONUNBUFFERED=1 \

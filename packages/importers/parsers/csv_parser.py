@@ -12,8 +12,11 @@ from packages.importers.ports import RawBlob
 
 # Header keywords are matched in both English and Chinese: spreadsheets exported by users
 # routinely use localized column names, so the values below are behaviour, not prose.
-_START_KEYWORDS = ("start", "開始", "date", "日期")
-_END_KEYWORDS = ("end", "結束")
+# Column headings come from a file the user exported, so they are in the user's language,
+# not ours. This list is the one place non-English text is allowed in the codebase, and the
+# language check exempts this package for exactly that reason.
+_START_KEYWORDS = ("start", "date", "\u958b\u59cb", "\u65e5\u671f")
+_END_KEYWORDS = ("end", "\u7d50\u675f")
 
 _DATE_FORMATS = ("%Y/%m/%d %H:%M", "%Y/%m/%d", "%Y%m%d")
 

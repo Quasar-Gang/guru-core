@@ -40,7 +40,9 @@ class LoginWithGoogle:
         is_new_user = user is None
         if user is None:
             user = await self._users.create(identity.email, identity.google_sub)
-            await self._profiles.upsert(user.id, {}, DEFAULT_TIMEZONE)
+            # The Profile itself is the Engine's to build from uploads; all login can
+            # honestly record is a timezone, so times mean something before any data lands.
+            await self._profiles.set_timezone(user.id, DEFAULT_TIMEZONE)
         return LoginResult(
             access_token=self._tokens.issue(user.id),
             user_id=user.id,

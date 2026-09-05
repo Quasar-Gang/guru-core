@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# End-to-end smoke test against a running API service.
+# End-to-end smoke test against a running stack.
 #
 #   API_BASE=http://127.0.0.1:8000 bash scripts/smoke.sh
 #
-# Walks the happy path from PRD section 1.2: sign in, create a plan session,
-# answer the follow-up round, read the three plans, activate one, list its
-# tasks, mark one done, export Markdown. Exits non-zero on the first surprise.
+# Walks the whole loop: sign in, upload a calendar, let the Analyzer read it, score
+# the shapes, answer the three questions, settle on a hypothesis, wait for the plan,
+# tick a task off, and open the quarterly review. Exits non-zero on the first surprise.
 set -euo pipefail
 
 API_BASE="${API_BASE:-http://127.0.0.1:8000}"
@@ -28,58 +28,97 @@ TOKEN=$(curl -sf -X POST "${V1}/auth/google" \
   | jqr '.access_token')
 AUTH=(-H "authorization: Bearer ${TOKEN}")
 
-say "create plan session"
-SESSION=$(curl -sf -X POST "${V1}/plan-sessions" "${AUTH[@]}" \
+say "upload a calendar"
+ICS=$(mktemp); trap 'rm -f "$ICS"' EXIT
+cat > "$ICS" <<'ICSBODY'
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//guru//smoke//EN
+BEGIN:VEVENT
+UID:smoke-1
+DTSTART:20260105T090000Z
+DTEND:20260105T100000Z
+SUMMARY:Design review
+END:VEVENT
+BEGIN:VEVENT
+UID:smoke-2
+DTSTART:20260112T190000Z
+DTEND:20260112T210000Z
+SUMMARY:Reading group
+END:VEVENT
+END:VCALENDAR
+ICSBODY
+SIZE=$(wc -c < "$ICS" | tr -d ' ')
+PRESIGN=$(curl -sf -X POST "${V1}/imports/presign" "${AUTH[@]}" \
   -H 'content-type: application/json' \
-  -d '{"goal": "12 週 5K 跑進 30 分"}' | jqr '.session_id')
+  -d "{\"filename\": \"smoke.ics\", \"content_type\": \"text/calendar\", \"size_bytes\": ${SIZE}}")
+IMPORT=$(echo "$PRESIGN" | jqr '.import_id')
+curl -sf -X PUT "$(echo "$PRESIGN" | jqr '.upload_url')" \
+  -H 'content-type: text/calendar' --data-binary "@${ICS}" >/dev/null
+curl -sf -X POST "${V1}/imports/${IMPORT}/complete" "${AUTH[@]}" >/dev/null
 
-poll_session() {
-  local want="$1" tries=0 body status
+poll() {  # poll <url> <jq path> <wanted> <failed>
+  local tries=0 body value
   while [ $tries -lt 60 ]; do
-    body=$(curl -sf "${V1}/plan-sessions/${SESSION}" "${AUTH[@]}")
-    status=$(echo "$body" | jq -r '.status')
-    case "$status" in
-      "$want") echo "$body"; return 0 ;;
-      failed)  fail "session failed: $(echo "$body" | jq -r '.error')" ;;
-    esac
+    body=$(curl -sf "$1" "${AUTH[@]}" || true)
+    value=$(echo "$body" | jq -r "$2" 2>/dev/null || echo "")
+    [ "$value" = "$3" ] && { echo "$body"; return 0; }
+    [ "$value" = "$4" ] && fail "$1 reported ${4}: $(echo "$body" | jq -r '.error')"
     tries=$((tries + 1)); sleep 1
   done
-  fail "session never reached ${want} (last status: ${status})"
+  fail "$1 never reached ${3} (last: ${value})"
 }
 
-say "wait for follow-up questions"
-BODY=$(poll_session questioning)
-ANSWERS=$(echo "$BODY" | jq -c '{answers: [.questions[] | {question_id: .id, choice: .options[0]}]}')
+say "wait for the parse and the profile"
+poll "${V1}/imports" '.[0].status' parsed failed >/dev/null
+poll "${V1}/profile" '.coverage.events' 2 '' >/dev/null
 
-say "submit answers"
-curl -sf -X POST "${V1}/plan-sessions/${SESSION}/answers" "${AUTH[@]}" \
-  -H 'content-type: application/json' -d "$ANSWERS" >/dev/null
+say "read the data and score every shape"
+RUN=$(curl -sf -X POST "${V1}/direction/runs" "${AUTH[@]}" | jqr '.id')
+BODY=$(poll "${V1}/direction/runs/${RUN}" '.status' ready failed)
+echo "$BODY" | jq -r '.reports[] | "  report \(.dimension)"'
+echo "$BODY" | jq -r '.verdicts[] | "  \(.role_model_code)\t\(.fit)\t\(.verdict)"'
+[ "$(echo "$BODY" | jq '.verdicts | length')" -ge 6 ] || fail "expected every shape to be scored"
+[ "$(echo "$BODY" | jq -c '[.verdicts[].evidence | length] | unique')" = "[5]" ] \
+  || fail "every verdict must carry exactly five evidence items"
 
-say "wait for the three plans"
-BODY=$(poll_session done)
-echo "$BODY" | jq -r '.plans[] | "  \(.difficulty)\t\(.duration_weeks)w\t\(.title)"'
-[ "$(echo "$BODY" | jq '.plans | length')" -eq 3 ] || fail "expected three plans"
-PLAN=$(echo "$BODY" | jq -r '.plans[] | select(.difficulty == "hard") | .id')
+say "answer the three questions"
+for pair in 'q1:No more managing a team.' 'q2:I stopped running after six weeks.' 'q3:career'; do
+  curl -sf -X PUT "${V1}/questions/${pair%%:*}" "${AUTH[@]}" \
+    -H 'content-type: application/json' \
+    -d "$(jq -nc --arg a "${pair#*:}" '{answer: $a}')" >/dev/null
+done
+curl -sf "${V1}/quota" "${AUTH[@]}" | jqr '.drop_first'
 
-say "activate the hard plan"
-curl -sf -X PATCH "${V1}/plans/${PLAN}" "${AUTH[@]}" \
+say "settle on a hypothesis"
+VERDICT=$(echo "$BODY" | jqr '.verdicts[0].id')
+HYPOTHESIS=$(curl -sf -X POST "${V1}/hypotheses" "${AUTH[@]}" \
+  -H 'content-type: application/json' -d "{\"fit_verdict_id\": \"${VERDICT}\"}")
+PLAN=$(echo "$HYPOTHESIS" | jqr '.plan_id')
+echo "  v$(echo "$HYPOTHESIS" | jq -r '.version') reviewed on $(echo "$HYPOTHESIS" | jq -r '.review_date')"
+
+say "wait for the plan"
+BODY=$(poll "${V1}/plans/${PLAN}" '.status' draft failed)
+echo "$BODY" | jq -r '.milestones[] | "  milestone \(.key): \(.title)"'
+echo "$BODY" | jq -r '.structure.assumptions[]? | "  assumes: \(.)"'
+
+say "activate it and tick one task off"
+curl -sf -X PUT "${V1}/plans/${PLAN}/status" "${AUTH[@]}" \
   -H 'content-type: application/json' -d '{"status": "active"}' >/dev/null
-
-say "list tasks"
 TASKS=$(curl -sf "${V1}/plans/${PLAN}/tasks" "${AUTH[@]}")
-COUNT=$(echo "$TASKS" | jq '.items | length')
+COUNT=$(echo "$TASKS" | jq 'length')
 [ "$COUNT" -gt 0 ] || fail "plan has no tasks"
 echo "  ${COUNT} tasks"
-TASK=$(echo "$TASKS" | jqr '.items[0].id')
+TASK=$(echo "$TASKS" | jqr '.[0].id')
+curl -sf -X PUT "${V1}/plans/${PLAN}/tasks/${TASK}/status" "${AUTH[@]}" \
+  -H 'content-type: application/json' -d '{"status": "done"}' | jqr '.status' >/dev/null
 
-say "mark one task done"
-curl -sf -X PATCH "${V1}/plans/${PLAN}/tasks/${TASK}" "${AUTH[@]}" \
-  -H 'content-type: application/json' -d '{"status": "done"}' \
-  | jqr '.status' >/dev/null
+say "open the quarterly review"
+REVIEW=$(curl -sf -X POST "${V1}/reconciliations" "${AUTH[@]}" \
+  -H 'content-type: application/json' \
+  -d "{\"hypothesis_id\": \"$(echo "$HYPOTHESIS" | jqr '.id')\"}" | jqr '.id')
+BODY=$(poll "${V1}/reconciliations/${REVIEW}" '.status' done failed)
+echo "$BODY" | jq -r '.narrative'
+[ "$(echo "$BODY" | jq -r '.outcome')" = "null" ] || fail "the review must not decide for the user"
 
-say "export markdown"
-curl -sf -X POST "${V1}/plans/${PLAN}/export" "${AUTH[@]}" \
-  -H 'content-type: application/json' -d '{"target": "markdown"}' \
-  | jqr '.markdown.content' | head -20
-
-printf '\nsmoke OK  session=%s plan=%s\n' "$SESSION" "$PLAN"
+printf '\nsmoke OK  plan=%s review=%s\n' "$PLAN" "$REVIEW"

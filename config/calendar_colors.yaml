@@ -1,8 +1,9 @@
-# Google Calendar colorId mapping (PRD 4.3.4). Tasks of the same kind share a color.
+# Google Calendar colorId mapping. Tasks of the same kind share a colour, so a week reads
+# at a glance without anybody having to open an event.
 default: "8"
 by_task_type:
   session: "9"
   habit: "2"
   checkpoint: "11"
   rest: "8"
-by_template_key: {}
+by_key: {}

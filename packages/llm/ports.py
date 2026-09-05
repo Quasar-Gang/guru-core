@@ -16,12 +16,17 @@ __all__ = [
 
 
 class Purpose(StrEnum):
-    """Call purpose; selects temperature, output length and role model context budget."""
+    """Call purpose; selects temperature, output length and the context budget.
 
-    evaluate = "evaluate"
+    Three, and only three, kinds of judgement are asked of a model anywhere in the system:
+    read the data (`analyze`), hold a shape against it (`verdict`), and lay out the work
+    (`generate`). Everything else — placing tasks on dates, applying the quota, diffing two
+    schedules — is arithmetic, and arithmetic stays in code.
+    """
+
+    analyze = "analyze"
+    verdict = "verdict"
     generate = "generate"
-    revise = "revise"
-    recommend = "recommend"
 
 
 OutputT = TypeVar("OutputT", bound=BaseModel)

@@ -1,4 +1,4 @@
-"""LLM call observability (PRD 7.8): the fields recorded per call, plus a minimal observer."""
+"""LLM call observability: the fields recorded per call, plus a minimal observer."""
 
 import logging
 from typing import Protocol
@@ -41,7 +41,7 @@ class NullObserver:
 
 
 class DbLlmObserver:
-    """Persist one row per LLM call to the `llm_calls` table (PRD 7.8)."""
+    """Persist one row per LLM call to the `llm_calls` table."""
 
     def __init__(self, repo: LlmCallRepo) -> None:
         self._repo = repo

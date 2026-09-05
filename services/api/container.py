@@ -1,14 +1,18 @@
 """The single composition root for the API service.
 
-`ApiContainer` is a frozen dataclass holding settings, the 14 repos, the infrastructure
-ports, and **one field per use case**. Adapters only ever read from the container; they
-never construct an implementation themselves.
+`ApiContainer` is a frozen dataclass holding settings, the repos, the infrastructure ports,
+and **one field per use case**. Adapters only ever read from the container; they never
+construct an implementation themselves.
 
 To add a use case:
 1. add a field to `ApiContainer`;
 2. build it from `parts` in `_build_use_cases()`.
-Both `build_container` and `build_test_container` pick it up automatically, so there is
-no second place to update.
+Both `build_container` and `build_test_container` pick it up automatically, so there is no
+second place to update.
+
+Application modules are grouped by station — `direction`, `questions`, `hypotheses`,
+`plans`, `checkins`, `exports`, `reconciliations` — because the use cases inside one station
+share their view models, and splitting them would only mean importing sideways.
 """
 
 from collections.abc import Awaitable, Callable
@@ -23,45 +27,54 @@ from packages.importers import ParserRegistry, default_registry
 from packages.queue import ArqQueue, InMemoryQueue, JobPayload, QueuePort
 from packages.repo import (
     CheckinRepo,
+    DirectionHypothesisRepo,
+    DirectionRunRepo,
     DocumentRepo,
-    FollowupRoundRepo,
+    FitVerdictRepo,
     ImportRepo,
     InMemoryCheckinRepo,
+    InMemoryDirectionHypothesisRepo,
+    InMemoryDirectionRunRepo,
     InMemoryDocumentRepo,
-    InMemoryFollowupRoundRepo,
+    InMemoryFitVerdictRepo,
     InMemoryImportRepo,
-    InMemoryLlmCallRepo,
     InMemoryOAuthConnectionRepo,
     InMemoryPlanExportRepo,
     InMemoryPlanRepo,
-    InMemoryPlanRevisionRepo,
-    InMemoryPlanSessionRepo,
-    InMemoryPlanTaskRepo,
+    InMemoryPlanTreeRepo,
     InMemoryProfileRepo,
+    InMemoryQuestionAnswerRepo,
+    InMemoryQuotaRepo,
+    InMemoryReconciliationRepo,
+    InMemoryReportRepo,
     InMemoryRoleModelRepo,
     InMemoryUserRepo,
-    LlmCallRepo,
     OAuthConnectionRepo,
     PgCheckinRepo,
+    PgDirectionHypothesisRepo,
+    PgDirectionRunRepo,
     PgDocumentRepo,
-    PgFollowupRoundRepo,
+    PgFitVerdictRepo,
     PgImportRepo,
-    PgLlmCallRepo,
     PgOAuthConnectionRepo,
     PgPlanExportRepo,
     PgPlanRepo,
-    PgPlanRevisionRepo,
-    PgPlanSessionRepo,
-    PgPlanTaskRepo,
+    PgPlanTreeRepo,
     PgProfileRepo,
+    PgQuestionAnswerRepo,
+    PgQuotaRepo,
+    PgReconciliationRepo,
+    PgReportRepo,
     PgRoleModelRepo,
     PgUserRepo,
     PlanExportRepo,
     PlanRepo,
-    PlanRevisionRepo,
-    PlanSessionRepo,
-    PlanTaskRepo,
+    PlanTreeRepo,
     ProfileRepo,
+    QuestionAnswerRepo,
+    QuotaRepo,
+    ReconciliationRepo,
+    ReportRepo,
     RoleModelRepo,
     UserRepo,
     build_engine,
@@ -77,37 +90,42 @@ from services.api.adapters.http.app import create_app
 from services.api.adapters.jwt_issuer import HmacTokenIssuer
 from services.api.adapters.queue.export_consumer import ExportPushConsumer
 from services.api.adapters.queue.import_consumer import ImportParseConsumer
-from services.api.adapters.role_model_client import (
-    FakeRoleModelClient,
-    RoleModelClient,
-    RoleModelClientPort,
-)
-from services.api.application.archive_plan import ArchivePlan
 from services.api.application.authorize_integration import AuthorizeIntegration
+from services.api.application.catalog import AuthorRoleModel, ListRoleModels
+from services.api.application.checkins import ListCheckins, SubmitCheckin
 from services.api.application.complete_import import CompleteImport
 from services.api.application.complete_integration import CompleteIntegration
-from services.api.application.create_plan_session import CreatePlanSession
-from services.api.application.create_revision import CreateRevision
-from services.api.application.decide_revision import DecideRevision
-from services.api.application.delete_plan import DeletePlan
+from services.api.application.direction import (
+    GetDirectionRun,
+    ReadProfile,
+    StartDirectionRun,
+)
 from services.api.application.disconnect_integration import DisconnectIntegration
-from services.api.application.export_markdown import ExportMarkdown
-from services.api.application.get_export_status import GetExportStatus
+from services.api.application.exports import (
+    GetExportStatus,
+    PushExport,
+    RequestExport,
+    UnexportPlan,
+)
 from services.api.application.get_job import GetJob
-from services.api.application.get_plan import GetPlan
-from services.api.application.get_plan_session import GetPlanSession
-from services.api.application.get_profile import GetProfile
-from services.api.application.get_revision import GetRevision
 from services.api.application.google_access_token import GoogleAccessTokenProvider
+from services.api.application.hypotheses import (
+    CreateHypothesis,
+    GetHypothesis,
+    ListHypotheses,
+)
 from services.api.application.import_google_calendar import ImportGoogleCalendar
-from services.api.application.list_checkins import ListCheckins
 from services.api.application.list_imports import ListImports
 from services.api.application.list_integrations import ListIntegrations
-from services.api.application.list_plan_tasks import ListPlanTasks
-from services.api.application.list_plans import ListPlans
-from services.api.application.list_revisions import ListRevisions
 from services.api.application.login_with_google import LoginWithGoogle
 from services.api.application.parse_import import ParseImport
+from services.api.application.plans import (
+    GetPlan,
+    ListPlans,
+    ListPlanTasks,
+    SetPlanStatus,
+    UpdateTaskStatus,
+)
 from services.api.application.ports import (
     CalendarPort,
     ClockPort,
@@ -117,15 +135,12 @@ from services.api.application.ports import (
     TokenIssuerPort,
 )
 from services.api.application.presign_import import PresignImport
-from services.api.application.push_export import PushExport
-from services.api.application.recommend_role_models import RecommendRoleModels
-from services.api.application.request_export import RequestExport
-from services.api.application.submit_answers import SubmitAnswers
-from services.api.application.submit_checkin import SubmitCheckin
-from services.api.application.unexport_plan import UnexportPlan
-from services.api.application.update_plan import UpdatePlan
-from services.api.application.update_plan_task import UpdatePlanTask
-from services.api.application.update_profile import UpdateProfile
+from services.api.application.questions import AnswerQuestion, GetQuota, ListQuestions
+from services.api.application.reconciliations import (
+    DecideReconciliation,
+    GetReconciliation,
+    StartReconciliation,
+)
 from services.api.domain.calendar_mapping import load_color_map
 from services.api.settings import ApiSettings
 
@@ -143,21 +158,24 @@ __all__ = [
 class ApiContainer:
     settings: ApiSettings
 
-    # --- repos (14, mirroring packages/repo/ports.py) ---
+    # --- repos ---
     users: UserRepo
     profiles: ProfileRepo
     oauth_connections: OAuthConnectionRepo
     imports: ImportRepo
     documents: DocumentRepo
+    runs: DirectionRunRepo
+    reports: ReportRepo
+    verdicts: FitVerdictRepo
     role_models: RoleModelRepo
-    plan_sessions: PlanSessionRepo
-    followup_rounds: FollowupRoundRepo
+    question_answers: QuestionAnswerRepo
+    quotas: QuotaRepo
+    hypotheses: DirectionHypothesisRepo
     plans: PlanRepo
-    plan_tasks: PlanTaskRepo
+    tree: PlanTreeRepo
     checkins: CheckinRepo
-    plan_revisions: PlanRevisionRepo
     plan_exports: PlanExportRepo
-    llm_calls: LlmCallRepo
+    reconciliations: ReconciliationRepo
 
     # --- infrastructure ports ---
     storage: StoragePort
@@ -170,50 +188,50 @@ class ApiContainer:
     google_oauth: GoogleOAuthPort
     calendar: CalendarPort
     cipher: TokenCipherPort
-    role_model_client: RoleModelClientPort
 
     # --- use cases (one field each) ---
     login_with_google: LoginWithGoogle
-    get_profile: GetProfile
-    update_profile: UpdateProfile
+    read_profile: ReadProfile
     presign_import: PresignImport
     complete_import: CompleteImport
     list_imports: ListImports
     parse_import: ParseImport
-    recommend_role_models: RecommendRoleModels
-    create_plan_session: CreatePlanSession
-    get_plan_session: GetPlanSession
-    submit_answers: SubmitAnswers
-    list_plans: ListPlans
-    get_plan: GetPlan
-    update_plan: UpdatePlan
-    archive_plan: ArchivePlan
-    delete_plan: DeletePlan
-    list_plan_tasks: ListPlanTasks
-    update_plan_task: UpdatePlanTask
-    submit_checkin: SubmitCheckin
-    list_checkins: ListCheckins
-    get_job: GetJob
+    import_google_calendar: ImportGoogleCalendar
     google_token_provider: GoogleAccessTokenProvider
     authorize_integration: AuthorizeIntegration
     complete_integration: CompleteIntegration
     list_integrations: ListIntegrations
     disconnect_integration: DisconnectIntegration
-    import_google_calendar: ImportGoogleCalendar
-    export_markdown: ExportMarkdown
+    start_direction_run: StartDirectionRun
+    get_direction_run: GetDirectionRun
+    list_questions: ListQuestions
+    answer_question: AnswerQuestion
+    get_quota: GetQuota
+    list_role_models: ListRoleModels
+    author_role_model: AuthorRoleModel
+    create_hypothesis: CreateHypothesis
+    list_hypotheses: ListHypotheses
+    get_hypothesis: GetHypothesis
+    list_plans: ListPlans
+    get_plan: GetPlan
+    set_plan_status: SetPlanStatus
+    list_plan_tasks: ListPlanTasks
+    update_task_status: UpdateTaskStatus
+    submit_checkin: SubmitCheckin
+    list_checkins: ListCheckins
     request_export: RequestExport
     push_export: PushExport
     get_export_status: GetExportStatus
     unexport_plan: UnexportPlan
-    create_revision: CreateRevision
-    list_revisions: ListRevisions
-    get_revision: GetRevision
-    decide_revision: DecideRevision
+    start_reconciliation: StartReconciliation
+    get_reconciliation: GetReconciliation
+    decide_reconciliation: DecideReconciliation
+    get_job: GetJob
 
 
 def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
     """Build every use case from the already-assembled repos and ports."""
-    get_plan = GetPlan(parts["plans"], parts["plan_tasks"], parts["plan_exports"])
+    get_plan = GetPlan(parts["plans"], parts["tree"])
     # Shared by every Google-facing use case so they hit one cache entry, not several.
     google_token_provider = GoogleAccessTokenProvider(
         parts["oauth_connections"],
@@ -222,76 +240,31 @@ def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
         parts["cache"],
         parts["clock"],
     )
-    get_revision = GetRevision(parts["plan_revisions"], get_plan)
-    export_markdown = ExportMarkdown(
-        get_plan, parts["plan_tasks"], parts["profiles"], parts["storage"], parts["clock"]
-    )
-    unexport_plan = UnexportPlan(
-        get_plan,
-        parts["plan_tasks"],
-        parts["plan_exports"],
-        parts["calendar"],
-        google_token_provider,
-    )
     return {
         "login_with_google": LoginWithGoogle(
             parts["users"], parts["profiles"], parts["oidc"], parts["tokens"]
         ),
-        "get_profile": GetProfile(parts["profiles"], parts["clock"]),
-        "update_profile": UpdateProfile(parts["profiles"]),
+        "read_profile": ReadProfile(parts["profiles"]),
         "presign_import": PresignImport(parts["imports"], parts["storage"]),
         "complete_import": CompleteImport(
             parts["imports"], parts["documents"], parts["storage"], parts["queue"]
         ),
         "list_imports": ListImports(parts["imports"], parts["documents"]),
-        "recommend_role_models": RecommendRoleModels(parts["profiles"], parts["role_model_client"]),
         "parse_import": ParseImport(
-            parts["imports"], parts["documents"], parts["storage"], parts["parsers"]
-        ),
-        "create_plan_session": CreatePlanSession(
-            parts["plan_sessions"],
             parts["imports"],
-            parts["oauth_connections"],
+            parts["documents"],
+            parts["storage"],
+            parts["parsers"],
             parts["queue"],
         ),
-        "get_plan_session": GetPlanSession(
-            parts["plan_sessions"],
-            parts["followup_rounds"],
-            parts["plans"],
-            parts["plan_tasks"],
-        ),
-        "submit_answers": SubmitAnswers(
-            parts["plan_sessions"], parts["followup_rounds"], parts["queue"], parts["clock"]
-        ),
-        "list_plans": ListPlans(parts["plans"], parts["plan_tasks"]),
-        "get_plan": get_plan,
-        "update_plan": UpdatePlan(parts["plans"], parts["clock"], get_plan),
-        "archive_plan": ArchivePlan(parts["plans"], parts["clock"], get_plan),
-        "delete_plan": DeletePlan(
-            parts["plans"],
-            parts["plan_tasks"],
-            parts["plan_exports"],
-            unexport_plan,
-            get_plan,
-        ),
-        "list_plan_tasks": ListPlanTasks(parts["plans"], parts["plan_tasks"], parts["profiles"]),
-        "update_plan_task": UpdatePlanTask(
-            parts["plans"],
-            parts["plan_tasks"],
-            parts["plan_exports"],
-            parts["queue"],
+        "import_google_calendar": ImportGoogleCalendar(
+            parts["imports"],
+            parts["documents"],
+            parts["calendar"],
+            google_token_provider,
             parts["clock"],
-        ),
-        "submit_checkin": SubmitCheckin(
-            parts["plans"],
-            parts["plan_tasks"],
-            parts["checkins"],
-            parts["plan_exports"],
             parts["queue"],
-            parts["clock"],
         ),
-        "list_checkins": ListCheckins(parts["plans"], parts["checkins"]),
-        "get_job": GetJob(parts["cache"], parts["queue"]),
         "google_token_provider": google_token_provider,
         "authorize_integration": AuthorizeIntegration(parts["google_oauth"]),
         "complete_integration": CompleteIntegration(
@@ -305,54 +278,92 @@ def _build_use_cases(parts: dict[str, Any]) -> dict[str, Any]:
             parts["cache"],
             parts["clock"],
         ),
-        "import_google_calendar": ImportGoogleCalendar(
-            parts["imports"],
-            parts["documents"],
-            parts["calendar"],
-            google_token_provider,
+        "start_direction_run": StartDirectionRun(parts["runs"], parts["profiles"], parts["queue"]),
+        "get_direction_run": GetDirectionRun(
+            parts["runs"], parts["reports"], parts["verdicts"], parts["role_models"]
+        ),
+        "list_questions": ListQuestions(parts["question_answers"]),
+        "answer_question": AnswerQuestion(
+            parts["question_answers"], parts["quotas"], parts["queue"], parts["clock"]
+        ),
+        "get_quota": GetQuota(parts["quotas"]),
+        "list_role_models": ListRoleModels(parts["role_models"]),
+        "author_role_model": AuthorRoleModel(parts["role_models"]),
+        "create_hypothesis": CreateHypothesis(
+            parts["hypotheses"],
+            parts["verdicts"],
+            parts["role_models"],
+            parts["quotas"],
+            parts["question_answers"],
+            parts["plans"],
+            parts["queue"],
             parts["clock"],
         ),
-        "export_markdown": export_markdown,
-        "request_export": RequestExport(
+        "list_hypotheses": ListHypotheses(
+            parts["hypotheses"], parts["role_models"], parts["plans"]
+        ),
+        "get_hypothesis": GetHypothesis(parts["hypotheses"], parts["role_models"], parts["plans"]),
+        "list_plans": ListPlans(parts["plans"], parts["tree"]),
+        "get_plan": get_plan,
+        "set_plan_status": SetPlanStatus(parts["plans"], get_plan, parts["clock"]),
+        "list_plan_tasks": ListPlanTasks(get_plan, parts["tree"]),
+        "update_task_status": UpdateTaskStatus(
             get_plan,
+            parts["tree"],
             parts["plan_exports"],
             parts["queue"],
-            google_token_provider,
-            export_markdown,
+            parts["clock"],
+        ),
+        "submit_checkin": SubmitCheckin(
+            get_plan,
+            parts["tree"],
+            parts["checkins"],
+            parts["plan_exports"],
+            parts["queue"],
+            parts["clock"],
+        ),
+        "list_checkins": ListCheckins(get_plan, parts["checkins"]),
+        "request_export": RequestExport(
+            parts["plans"], parts["plan_exports"], parts["queue"], google_token_provider
         ),
         "push_export": PushExport(
             parts["plans"],
-            parts["plan_tasks"],
+            parts["tree"],
             parts["plan_exports"],
             parts["calendar"],
             google_token_provider,
             load_color_map(),
             parts["clock"],
         ),
-        "get_export_status": GetExportStatus(get_plan, parts["plan_exports"], parts["plan_tasks"]),
-        "unexport_plan": unexport_plan,
-        "create_revision": CreateRevision(parts["plan_revisions"], parts["queue"], get_plan),
-        "list_revisions": ListRevisions(parts["plan_revisions"], get_plan),
-        "get_revision": get_revision,
-        "decide_revision": DecideRevision(
+        "get_export_status": GetExportStatus(parts["plans"], parts["plan_exports"], parts["tree"]),
+        "unexport_plan": UnexportPlan(
             parts["plans"],
-            parts["plan_tasks"],
-            parts["plan_revisions"],
-            parts["profiles"],
+            parts["tree"],
             parts["plan_exports"],
-            parts["queue"],
-            parts["clock"],
-            get_revision,
+            parts["calendar"],
+            google_token_provider,
         ),
+        "start_reconciliation": StartReconciliation(
+            parts["reconciliations"], parts["hypotheses"], parts["queue"], parts["clock"]
+        ),
+        "get_reconciliation": GetReconciliation(parts["reconciliations"]),
+        "decide_reconciliation": DecideReconciliation(
+            parts["reconciliations"],
+            parts["hypotheses"],
+            parts["quotas"],
+            parts["question_answers"],
+            parts["clock"],
+        ),
+        "get_job": GetJob(parts["cache"], parts["queue"]),
     }
 
 
 def _assemble(parts: dict[str, Any], overrides: dict[str, Any]) -> ApiContainer:
     """Apply overrides first, then build the use cases from the overridden components.
 
-    This guarantees an overridden repo or port actually reaches the use cases that depend
-    on it. Overrides may also name a use case directly; applying them once more at the end
-    lets that win over the default wiring.
+    This guarantees an overridden repo or port actually reaches the use cases that depend on
+    it. Overrides may also name a use case directly; applying them once more at the end lets
+    that win over the default wiring.
     """
     known = {f.name for f in fields(ApiContainer)}
     unknown = set(overrides) - known
@@ -417,15 +428,18 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         "oauth_connections": PgOAuthConnectionRepo(session_factory),
         "imports": PgImportRepo(session_factory),
         "documents": PgDocumentRepo(session_factory),
+        "runs": PgDirectionRunRepo(session_factory),
+        "reports": PgReportRepo(session_factory),
+        "verdicts": PgFitVerdictRepo(session_factory),
         "role_models": PgRoleModelRepo(session_factory),
-        "plan_sessions": PgPlanSessionRepo(session_factory),
-        "followup_rounds": PgFollowupRoundRepo(session_factory),
+        "question_answers": PgQuestionAnswerRepo(session_factory),
+        "quotas": PgQuotaRepo(session_factory),
+        "hypotheses": PgDirectionHypothesisRepo(session_factory),
         "plans": PgPlanRepo(session_factory),
-        "plan_tasks": PgPlanTaskRepo(session_factory),
+        "tree": PgPlanTreeRepo(session_factory),
         "checkins": PgCheckinRepo(session_factory),
-        "plan_revisions": PgPlanRevisionRepo(session_factory),
         "plan_exports": PgPlanExportRepo(session_factory),
-        "llm_calls": PgLlmCallRepo(session_factory),
+        "reconciliations": PgReconciliationRepo(session_factory),
         "storage": _build_storage(resolved),
         "parsers": default_registry(),
         "queue": ArqQueue(resolved.redis_url),
@@ -440,7 +454,6 @@ def build_container(settings: ApiSettings | None = None) -> ApiContainer:
         ),
         "calendar": GoogleCalendar(),
         "cipher": FernetTokenCipher(resolved.oauth_token_enc_key),
-        "role_model_client": RoleModelClient(resolved.role_model_base_url),
     }
     return _assemble(parts, {})
 
@@ -476,15 +489,18 @@ def build_test_container(**overrides: Any) -> ApiContainer:
         "oauth_connections": InMemoryOAuthConnectionRepo(),
         "imports": InMemoryImportRepo(),
         "documents": InMemoryDocumentRepo(),
+        "runs": InMemoryDirectionRunRepo(),
+        "reports": InMemoryReportRepo(),
+        "verdicts": InMemoryFitVerdictRepo(),
         "role_models": InMemoryRoleModelRepo(),
-        "plan_sessions": InMemoryPlanSessionRepo(),
-        "followup_rounds": InMemoryFollowupRoundRepo(),
+        "question_answers": InMemoryQuestionAnswerRepo(),
+        "quotas": InMemoryQuotaRepo(),
+        "hypotheses": InMemoryDirectionHypothesisRepo(),
         "plans": InMemoryPlanRepo(),
-        "plan_tasks": InMemoryPlanTaskRepo(),
+        "tree": InMemoryPlanTreeRepo(),
         "checkins": InMemoryCheckinRepo(),
-        "plan_revisions": InMemoryPlanRevisionRepo(),
         "plan_exports": InMemoryPlanExportRepo(),
-        "llm_calls": InMemoryLlmCallRepo(),
+        "reconciliations": InMemoryReconciliationRepo(),
         "storage": InMemoryStorage(),
         "parsers": default_registry(),
         "queue": InMemoryQueue(),
@@ -495,7 +511,6 @@ def build_test_container(**overrides: Any) -> ApiContainer:
         "google_oauth": FakeOAuth(),
         "calendar": FakeCalendar(),
         "cipher": PlainTokenCipher(),
-        "role_model_client": FakeRoleModelClient(),
     }
     # tokens is bound to the default clock; if the caller overrode only the clock, rebind it
     # so we do not keep issuing tokens against the old one.

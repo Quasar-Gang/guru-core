@@ -1,8 +1,13 @@
-"""One repo protocol per table.
+"""One repo protocol per aggregate.
 
-Every method touching user data takes a `user_id: UUID`, the exceptions being `role_models`
-and the worker-only `*_unscoped` reads. Return types are always the frozen Pydantic models
-from `entities.py`.
+Most aggregates are a single table, so most protocols are a single table's worth of
+methods. The exception is `PlanTreeRepo`: a Plan's Milestones, Tasks and Schedule Slots are
+written and replaced together as one consistent whole, and splitting them into three
+protocols would only invite a caller to write half a tree.
+
+Every method touching user data takes a `user_id: UUID`, the exceptions being the role
+model catalogue and the worker-only `*_unscoped` reads. Return types are always the frozen
+Pydantic models from `entities.py`.
 """
 
 from __future__ import annotations
@@ -15,20 +20,29 @@ from uuid import UUID
 
 from packages.repo.entities import (
     Checkin,
+    DirectionHypothesis,
+    DirectionRun,
     Document,
-    FollowupRound,
+    FitVerdict,
     Import,
     LlmCallLog,
-    NewPlan,
-    NewPlanTask,
+    Milestone,
+    NewFitVerdict,
+    NewMilestone,
+    NewReport,
+    NewRoleModel,
+    NewTask,
     OAuthConnection,
     Plan,
     PlanExport,
-    PlanRevision,
-    PlanSession,
-    PlanTask,
     Profile,
+    QuestionAnswer,
+    Quota,
+    Reconciliation,
+    Report,
     RoleModel,
+    ScheduledTaskRow,
+    Task,
     TaskStatusUpdate,
     User,
 )
@@ -40,12 +54,6 @@ class UserRepo(Protocol):
     async def get(self, user_id: UUID) -> User | None: ...
 
     async def create(self, email: str, google_sub: str) -> User: ...
-
-
-class ProfileRepo(Protocol):
-    async def get(self, user_id: UUID) -> Profile | None: ...
-
-    async def upsert(self, user_id: UUID, answers: dict[str, Any], timezone: str) -> Profile: ...
 
 
 class OAuthConnectionRepo(Protocol):
@@ -89,109 +97,187 @@ class DocumentRepo(Protocol):
     async def list_by_imports(self, import_ids: Sequence[UUID]) -> list[Document]: ...
 
 
+class ProfileRepo(Protocol):
+    """One Profile per user, revised in place — hence `upsert` and no `create`."""
+
+    async def get(self, user_id: UUID) -> Profile | None: ...
+
+    async def upsert(
+        self,
+        user_id: UUID,
+        timezone: str,
+        signals: dict[str, Any],
+        coverage: dict[str, Any],
+        source_import_ids: Sequence[UUID],
+    ) -> Profile: ...
+
+    async def set_timezone(self, user_id: UUID, timezone: str) -> Profile: ...
+
+
+class DirectionRunRepo(Protocol):
+    async def create(self, user_id: UUID) -> DirectionRun: ...
+
+    async def get(self, user_id: UUID, run_id: UUID) -> DirectionRun | None: ...
+
+    async def get_unscoped(self, run_id: UUID) -> DirectionRun | None: ...
+
+    async def latest(self, user_id: UUID) -> DirectionRun | None: ...
+
+    async def set_status(self, run_id: UUID, status: str, error: str | None = None) -> None: ...
+
+    async def set_period(self, run_id: UUID, period_start: date, period_end: date) -> None: ...
+
+    async def set_readouts(self, run_id: UUID, readouts: dict[str, Any]) -> None: ...
+
+
+class ReportRepo(Protocol):
+    async def replace_for_run(
+        self, user_id: UUID, run_id: UUID, reports: Sequence[NewReport]
+    ) -> list[Report]: ...
+
+    async def list_for_run(self, run_id: UUID) -> list[Report]: ...
+
+
 class RoleModelRepo(Protocol):
+    """The catalogue is not user data: the six shipped shapes are read by everyone.
+
+    User-authored templates live in the same table with `author = "user"`, so the
+    Recommender scores one catalogue rather than two.
+    """
+
     async def get(self, role_model_id: UUID) -> RoleModel | None: ...
+
+    async def get_by_code(self, code: str) -> RoleModel | None: ...
 
     async def list(
         self,
-        kind: str | None,
-        tags_any: Sequence[str] | None,
-        tags_all: Sequence[str] | None,
+        author_user_id: UUID | None = None,
+        tags_any: Sequence[str] | None = None,
         active_only: bool = True,
         limit: int = 50,
     ) -> builtins.list[RoleModel]: ...
 
     async def list_tags(self) -> builtins.list[str]: ...
 
-    async def upsert(
-        self,
-        role_model_id: UUID | None,
-        kind: str,
-        name: str,
-        tags: builtins.list[str],
-        content: dict[str, Any],
-    ) -> RoleModel: ...
+    async def upsert(self, role_model: NewRoleModel) -> RoleModel: ...
 
     async def deactivate(self, role_model_id: UUID) -> None: ...
 
 
-class PlanSessionRepo(Protocol):
-    async def create(
+class FitVerdictRepo(Protocol):
+    async def replace_for_run(
+        self, user_id: UUID, run_id: UUID, verdicts: Sequence[NewFitVerdict]
+    ) -> list[FitVerdict]: ...
+
+    async def list_for_run(self, run_id: UUID) -> list[FitVerdict]: ...
+
+    async def get(self, user_id: UUID, verdict_id: UUID) -> FitVerdict | None: ...
+
+
+class QuestionAnswerRepo(Protocol):
+    async def upsert(
+        self, user_id: UUID, question_key: str, answer: str, skipped: bool, answered_at: datetime
+    ) -> QuestionAnswer: ...
+
+    async def list_for_user(self, user_id: UUID) -> list[QuestionAnswer]: ...
+
+
+class QuotaRepo(Protocol):
+    async def get(self, user_id: UUID) -> Quota | None: ...
+
+    async def upsert(
+        self, user_id: UUID, drop_first: str, weekly_minutes: int, effective_from: date
+    ) -> Quota: ...
+
+
+class DirectionHypothesisRepo(Protocol):
+    """Append-only by construction: there is no update method to call.
+
+    `append` allocates the next version for the user; a hypothesis, once written, is only
+    ever read again.
+    """
+
+    async def append(
         self,
         user_id: UUID,
-        goal: str,
-        intake: dict[str, Any],
-        import_ids: list[UUID],
-        use_calendar: bool,
-        trait_role_model_id: UUID | None,
-        persona_role_model_id: UUID | None,
-    ) -> PlanSession: ...
+        role_model_id: UUID,
+        fit_verdict_id: UUID,
+        source: str,
+        evidence_snapshot: dict[str, Any],
+        drop_first: str | None,
+        answers_count: int,
+        review_date: date,
+    ) -> DirectionHypothesis: ...
 
-    async def get(self, user_id: UUID, session_id: UUID) -> PlanSession | None: ...
+    async def get(self, user_id: UUID, hypothesis_id: UUID) -> DirectionHypothesis | None: ...
 
-    async def get_unscoped(self, session_id: UUID) -> PlanSession | None: ...
+    async def get_unscoped(self, hypothesis_id: UUID) -> DirectionHypothesis | None: ...
 
-    async def set_status(self, session_id: UUID, status: str, error: str | None = None) -> None: ...
+    async def list_for_user(self, user_id: UUID) -> list[DirectionHypothesis]: ...
 
-    async def bump_round(self, session_id: UUID) -> int: ...
-
-    async def set_context_snapshot(self, session_id: UUID, snapshot: dict[str, Any]) -> None: ...
-
-
-class FollowupRoundRepo(Protocol):
-    async def create(
-        self, session_id: UUID, round_no: int, questions: list[dict[str, Any]]
-    ) -> FollowupRound: ...
-
-    async def latest(self, session_id: UUID) -> FollowupRound | None: ...
-
-    async def list_for_session(self, session_id: UUID) -> list[FollowupRound]: ...
-
-    async def record_answers(
-        self, round_id: UUID, answers: list[dict[str, Any]], answered_at: datetime
-    ) -> None: ...
+    async def latest(self, user_id: UUID) -> DirectionHypothesis | None: ...
 
 
 class PlanRepo(Protocol):
-    async def create_many(self, plans: Sequence[NewPlan]) -> list[Plan]: ...
+    async def create(self, user_id: UUID, hypothesis_id: UUID) -> Plan: ...
 
     async def get(self, user_id: UUID, plan_id: UUID) -> Plan | None: ...
 
     async def get_unscoped(self, plan_id: UUID) -> Plan | None: ...
 
-    async def list_for_user(self, user_id: UUID, status: str | None) -> list[Plan]: ...
+    async def get_by_hypothesis(self, hypothesis_id: UUID) -> Plan | None: ...
 
-    async def list_for_session(self, session_id: UUID) -> list[Plan]: ...
+    async def list_for_user(self, user_id: UUID, status: str | None) -> list[Plan]: ...
 
     async def update_fields(self, plan_id: UUID, **fields: Any) -> Plan: ...
 
-    async def set_status_for_session(
-        self, session_id: UUID, status: str, exclude_plan_id: UUID
+
+class PlanTreeRepo(Protocol):
+    """The Plan's contents: the Milestone tree, its Tasks, and the Schedule they land on.
+
+    `replace_tree` is the only write path that creates them, and it takes the whole tree at
+    once. Milestones and Tasks name their parents by key rather than by id, so the Plan
+    Engine can hand over a freshly generated tree without knowing any database identity.
+    """
+
+    async def replace_tree(
+        self,
+        plan_id: UUID,
+        milestones: Sequence[NewMilestone],
+        tasks: Sequence[NewTask],
     ) -> None: ...
 
-    async def delete(self, plan_id: UUID) -> None: ...
+    async def list_milestones(self, plan_id: UUID) -> list[Milestone]: ...
 
+    async def list_scheduled(
+        self, plan_id: UUID, start_from: datetime | None = None, start_to: datetime | None = None
+    ) -> list[ScheduledTaskRow]: ...
 
-class PlanTaskRepo(Protocol):
-    async def replace_all(self, plan_id: UUID, tasks: Sequence[NewPlanTask]) -> None: ...
+    async def list_dirty(self, plan_id: UUID) -> list[ScheduledTaskRow]: ...
 
-    async def replace_from(
-        self, plan_id: UUID, cutoff: datetime, tasks: Sequence[NewPlanTask]
-    ) -> None: ...
+    async def get_task(self, plan_id: UUID, task_id: UUID) -> Task | None: ...
 
-    async def list(
-        self, plan_id: UUID, start_from: datetime | None, start_to: datetime | None
-    ) -> builtins.list[PlanTask]: ...
+    async def find_task(self, task_id: UUID) -> ScheduledTaskRow | None: ...
 
-    async def get(self, plan_id: UUID, task_id: UUID) -> PlanTask | None: ...
-
-    async def update_fields(self, task_id: UUID, **fields: Any) -> PlanTask: ...
+    async def set_task_status(
+        self, task_id: UUID, status: str, completed_at: datetime | None
+    ) -> Task: ...
 
     async def bulk_set_status(self, plan_id: UUID, results: Sequence[TaskStatusUpdate]) -> None: ...
 
     async def counts_by_status(self, plan_id: UUID) -> dict[str, int]: ...
 
-    async def list_dirty(self, plan_id: UUID) -> builtins.list[PlanTask]: ...
+    async def mark_dirty(self, task_id: UUID) -> None:
+        """Forget when this slot was last pushed, but keep where it was pushed to.
+
+        Losing the external reference would make the next push create a duplicate event
+        rather than update the one already on the calendar.
+        """
+        ...
+
+    async def mark_synced(
+        self, task_id: UUID, external_ref: str | None, synced_at: datetime | None
+    ) -> None: ...
 
 
 class CheckinRepo(Protocol):
@@ -204,30 +290,6 @@ class CheckinRepo(Protocol):
     ) -> Checkin: ...
 
     async def list_for_plan(self, plan_id: UUID) -> list[Checkin]: ...
-
-
-class PlanRevisionRepo(Protocol):
-    async def create(self, plan_id: UUID, strategy: str, note: str | None) -> PlanRevision: ...
-
-    async def get(self, plan_id: UUID, revision_id: UUID) -> PlanRevision | None: ...
-
-    async def get_unscoped(self, revision_id: UUID) -> PlanRevision | None: ...
-
-    async def list_for_plan(self, plan_id: UUID) -> list[PlanRevision]: ...
-
-    async def has_open(self, plan_id: UUID) -> bool: ...
-
-    async def set_proposal(
-        self,
-        revision_id: UUID,
-        proposed_tasks: list[dict[str, Any]],
-        diff: list[dict[str, Any]],
-        rationale: str,
-    ) -> None: ...
-
-    async def set_status(
-        self, revision_id: UUID, status: str, decided_at: datetime | None
-    ) -> None: ...
 
 
 class PlanExportRepo(Protocol):
@@ -246,6 +308,30 @@ class PlanExportRepo(Protocol):
     ) -> PlanExport: ...
 
     async def delete(self, plan_id: UUID, target: str) -> None: ...
+
+
+class ReconciliationRepo(Protocol):
+    async def create(
+        self, user_id: UUID, hypothesis_id: UUID, period_start: date, period_end: date
+    ) -> Reconciliation: ...
+
+    async def get(self, user_id: UUID, reconciliation_id: UUID) -> Reconciliation | None: ...
+
+    async def get_unscoped(self, reconciliation_id: UUID) -> Reconciliation | None: ...
+
+    async def list_for_hypothesis(self, hypothesis_id: UUID) -> list[Reconciliation]: ...
+
+    async def complete(
+        self,
+        reconciliation_id: UUID,
+        comparison: dict[str, Any],
+        narrative: str,
+        revision_kind: str | None,
+    ) -> None: ...
+
+    async def decide(self, reconciliation_id: UUID, outcome: str) -> None: ...
+
+    async def fail(self, reconciliation_id: UUID, error: str) -> None: ...
 
 
 class LlmCallRepo(Protocol):

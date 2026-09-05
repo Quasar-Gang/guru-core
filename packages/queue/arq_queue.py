@@ -7,7 +7,7 @@ from arq.jobs import JobStatus as ArqJobStatus
 
 from packages.queue.jobs import (
     API_WORKER_QUEUE,
-    PLAN_ENGINE_WORKER_QUEUE,
+    ENGINE_WORKER_QUEUE,
     WORKER_QUEUE_BY_JOB,
     JobPayload,
 )
@@ -41,7 +41,7 @@ class ArqQueue:
     async def status(self, job_id: str) -> JobStatus | None:
         pool = await self._get_pool()
         # A job id alone does not say which list it went to, so check both.
-        for queue in (API_WORKER_QUEUE, PLAN_ENGINE_WORKER_QUEUE):
+        for queue in (API_WORKER_QUEUE, ENGINE_WORKER_QUEUE):
             status = await self._status_on(pool, job_id, queue)
             if status is not None:
                 return status

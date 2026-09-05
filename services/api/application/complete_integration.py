@@ -1,4 +1,4 @@
-"""Exchange the OAuth code for tokens and store the refresh token encrypted (PRD 3.6)."""
+"""Exchange the OAuth code for tokens and store the refresh token encrypted."""
 
 from uuid import UUID
 

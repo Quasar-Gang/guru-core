@@ -1,4 +1,4 @@
-"""PgLlmCallRepo — PostgreSQL implementation of the append-only llm_calls table."""
+"""PostgreSQL repo for `llm_calls` — append-only, one row per model call."""
 
 from __future__ import annotations
 
@@ -7,10 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from packages.repo import models
 from packages.repo.entities import LlmCallLog
 
+__all__ = ["PgLlmCallRepo"]
+
 
 class PgLlmCallRepo:
-    """PostgreSQL LlmCallRepo."""
-
     def __init__(self, session_factory: async_sessionmaker[AsyncSession]) -> None:
         self._session_factory = session_factory
 

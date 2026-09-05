@@ -1,295 +1,415 @@
-# guru-core 本地 LLM 選型與 PRD 評估
+# Local model selection for guru-core
 
-> 研究日期：2026-09-05
-> 適用文件：`guru-core-PRD.md` v0.2 Draft
-> 目標硬體：MacBook Pro（Apple M4、10-core CPU、10-core GPU、24 GB unified memory）
-> 證據範圍：模型開發者的 model card／技術報告、官方文件與原始 repository；模型能力數字均為供應商自評，尚未等同 guru-core 的實測結果。
+> Researched 2026-09-05, revised 2026-09-06 for the three-station design.
+> Target hardware: MacBook Pro (Apple M4, 10-core CPU, 10-core GPU, 24 GB unified memory).
+> Evidence: model cards, technical reports, official documentation and source repositories.
+> Capability numbers are vendor self-reported and are **not** the same as guru-core results.
 
-## 1. 結論
+## 1 · Conclusion
 
-本機 demo 建議採用：
+For a local demo:
 
-- **Runtime：Ollama（原生 macOS 安裝，不放進 Docker）**
-- **主模型：`qwen3.5:9b`（Ollama 版 6.6 GB；本機解析 digest `6488c96fa5fa`）**
-- **明確配置：16,384 context、低溫、`reasoning_effort: none`、單一併發**
-- **穩定回退：`qwen3:8b`（Ollama Q4_K_M 5.2 GB）**
+- **Runtime: Ollama**, natively on macOS, not in Docker
+- **Model: `qwen3.5:9b`** (6.6 GB on Ollama; digest `6488c96fa5fa` when resolved here)
+- **Explicit configuration:** 16,384 context, low temperature, `reasoning_effort: none`,
+  concurrency 1
+- **Fallback: `qwen3:8b`** (Ollama Q4_K_M, 5.2 GB)
 
-選擇 `qwen3.5:9b` 的原因不是單一通用 benchmark，而是它最符合本產品的交集：9B 尺寸在 24 GB unified memory 留有充分餘裕、原生 262K context、201 種語言／方言、強 instruction following 與 agent 能力、Apache-2.0 權重、Ollama 官方直接提供 6.6 GB artifact，且 Ollama 的 OpenAI-compatible Chat Completions 已支援 `response_format` JSON Schema 與 reasoning control。[Qwen3.5-9B 官方 model card](https://huggingface.co/Qwen/Qwen3.5-9B)、[Ollama Qwen3.5 library](https://ollama.com/library/qwen3.5)、[Ollama OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility)
+`qwen3.5:9b` is chosen not on one general benchmark but on the intersection this product
+needs: a 9B model leaves real headroom in 24 GB of unified memory, native 262K context, 201
+languages and dialects, strong instruction following, Apache-2.0 weights, an official 6.6 GB
+Ollama artifact, and an OpenAI-compatible endpoint that already supports `response_format`
+JSON Schema and reasoning control.
+[Qwen3.5-9B model card](https://huggingface.co/Qwen/Qwen3.5-9B) ·
+[Ollama Qwen3.5](https://ollama.com/library/qwen3.5) ·
+[Ollama OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility)
 
-這是一個**待完整 guru-core 任務集驗證的工程選擇**，不是品質已獲證明的結論。本次 smoke test 已證明 Metal 100% GPU offload、16,384 context 與 OpenAI-compatible JSON Schema 路徑可用；同時首次輸出出現「JSON 合 schema、業務語意卻錯置」，第二次出現 `ready=true` 但 `missing` 非空，證明 PRD 的 Pydantic 後業務規則檢查與修正重試不可省。PRD 應保留 provider 可切換設計，並以四種實際 schema 的成功率決定是否升級到較大模型或雲端模型。
+This is **an engineering choice pending a full guru-core evaluation set**, not a proven
+quality result. The smoke test established that 100% Metal GPU offload, a 16,384 context and
+the OpenAI-compatible JSON-Schema path all work. It also produced, on the first attempt, an
+answer that satisfied the schema and misplaced the semantics — and on the second, one that
+broke an invariant while remaining well-formed. That is the whole argument for validating
+twice and retrying with the violation fed back.
 
-## 2. 從 PRD 反推的模型需求
+## 2 · What the model actually has to do
 
-PRD 的模型工作並非開放式聊天，而是四種受限、可驗證的轉換：
+The model work here is not open-ended chat. It is five constrained, checkable
+transformations under three purposes:
 
-| 呼叫 | 次數／觸發 | 最大輸出 | 主要難點 |
-|---|---:|---:|---|
-| `evaluate_readiness` | 每 session 1–3 次 | 1,500 tokens | 從混合 context 判斷缺口；問題數與選項數必須守規格 |
-| `generate_plans` | 每 session 1 次 | 4,000 tokens | 產生巢狀 `PlanTemplate`；遵守 pacing 與相對排程規則 |
-| `revise_plan` | 每次修訂 1 次 | 3,000 tokens | 在策略與既有 template 約束內修改，不破壞 key 對齊 |
-| `recommend_role_model` | 用戶查詢時 1 次 | 800 tokens | 從有限候選選 ≤3 筆，ID 必須完全來自候選集合 |
+| Call | Purpose | Frequency | Max output | The hard part |
+|---|---|---|---:|---|
+| `build_profile` | `analyze` | once per upload batch | 4,000 | Classify every event into a dimension and hand back the reference it was given |
+| `create_reports` | `analyze` | once per run | 4,000 | Say what the numbers mean without contradicting or restating them |
+| `score_role_models` | `verdict` | once per run | 6,000 | Every shape scored, exactly five cited evidence items each, at least one for and one against |
+| `build_plan` | `generate` | once per hypothesis | 4,000 | A nested milestone tree with relative week ranges, and no dates at all |
+| `narrate_reconciliation` | `analyze` | once per review | 4,000 | Put a computed comparison into words and end on a question |
 
-因此優先順序應為：
+So the priorities are, in order:
 
-1. **Schema-constrained JSON 與指令遵循穩定度**，而非純知識問答分數。
-2. **繁體中文與中英混合 context**；guru-core 的介面與 role model 內容很可能以中文為主。
-3. **16K 實際 context 能在 24 GB 記憶體穩定執行**，同時保留 4K 輸出與 application／OS 空間。
-4. **低延遲、可關閉長思考**；四個呼叫多數是抽取、排序與受限生成，不值得為每次請求支付長 CoT。
-5. **OpenAI-compatible API**，避免改動既定 `OpenAICompatLLM` 邊界。
-6. **可重現 artifact 與可接受授權**，方便 demo、CI fixture 與日後商用評估。
+1. **Schema-constrained JSON and instruction-following stability**, not knowledge scores.
+2. **Long, mixed-language context** — uploaded documents are whatever the user's are.
+3. **16K of real context stable in 24 GB**, with 4K reserved for output and room left for
+   the application and the OS.
+4. **Low latency with reasoning that can be turned off.** Four of the five calls are
+   extraction, classification and constrained generation; a long chain of thought on every
+   request is not worth paying for.
+5. **An OpenAI-compatible API**, so `OpenAICompatLLM` stays as it is.
+6. **A reproducible artifact and an acceptable licence.**
 
-PRD 已做對小模型非常有利的切割：只讓 LLM 產一份基準 template，三種難度、日期排程、diff、粗篩、計分與 Markdown rendering 均由 deterministic code 負責。這比直接換更大的模型更能提高可靠性。
+The architecture is already generous to a small model: it never asks for arithmetic. Placing
+tasks on dates, applying the quota, diffing schedules and counting what was done are all
+deterministic code. That buys more reliability than a larger model would.
 
-## 3. 「開源」與「開放權重」不能混用
+## 3 · "Open source" and "open weights" are not the same thing
 
-OSI 的 Open Source AI Definition 1.0 要求使用、研究、修改、分享四項自由，且可修改的首選形式需包含足夠的訓練資料資訊、完整訓練／資料處理／推理程式碼，以及參數。單純能下載權重，甚至權重套用 Apache-2.0／MIT，仍不自動證明整個模型符合 OSAID。[OSI OSAID 1.0](https://opensource.org/ai/open-source-ai-definition)、[OSI FAQ](https://opensource.org/ai/faq)
+The OSI's Open Source AI Definition 1.0 requires four freedoms — use, study, modify, share —
+and the preferred form for modification has to include enough information about the training
+data, the complete training, data-processing and inference code, and the parameters.
+Downloadable weights, even Apache-2.0 ones, do not by themselves make a model OSAID
+compliant. [OSAID 1.0](https://opensource.org/ai/open-source-ai-definition) ·
+[OSI FAQ](https://opensource.org/ai/faq)
 
-本文採以下標記：
+This document uses three labels:
 
-- **Fully open／OSAID 路線**：官方公開從資料、訓練程式碼、recipe、checkpoints 到評測的完整 model flow；仍應在法務使用前核對實際 artifact 授權。
-- **Permissively licensed open weights**：權重是 Apache-2.0／MIT，商用與衍生通常較容易，但未證明整個 model flow 符合 OSAID。
-- **Community／custom terms open weights**：可下載權重，但有 use policy、分發、命名、規模或用途限制；不是 OSI open source。
+- **Fully open / OSAID track** — the whole model flow is published: data, training code,
+  recipes, checkpoints, evaluations.
+- **Permissively licensed open weights** — weights under Apache-2.0 or MIT; commercial use
+  and derivatives are usually easy, but the full model flow is not established.
+- **Community / custom terms open weights** — downloadable, with use policies, distribution,
+  naming or scale conditions. Not OSI open source.
 
-| 模型 | 權重／使用條款 | 本文分類 | 判斷 |
+| Model | Weights / terms | Label | Note |
 |---|---|---|---|
-| Qwen3／Qwen3.5 | Apache-2.0 | Permissively licensed open weights | 權重條款寬鬆；官方 model card 並未在本文查證範圍內提供可重建等價系統所需的完整資料與訓練 code |
-| Mistral Small 3.1 | Apache-2.0 | Permissively licensed open weights | 同上；Mistral 稱其 open source，但本文不把供應商用語當作 OSAID 認證 |
-| DeepSeek-R1 Distill Qwen | MIT，底模 Qwen2.5 Apache-2.0 | Permissively licensed open weights | repo 公開技術報告與權重；800K 蒸餾樣本的完整可重建資料流未在本文查證為全公開 |
-| gpt-oss | Apache-2.0，另有 usage policy | Permissively licensed open weights | OpenAI 官方也明確稱其 **open-weight**，不是 fully open model flow |
-| Llama 3.x | Llama Community License + Acceptable Use Policy | Custom-license open weights；**非 OSI** | 有用途政策、700M MAU 額外條件、分發／命名義務；OSI 亦明確判定 Llama 3.x 不是 open source |
-| Gemma 3 | Gemma Terms + Prohibited Use Policy | Custom-terms open weights；**非 OSI** | 使用與分發受禁止用途及 notice 等條款約束，不是 OSI-approved license |
-| Olmo 3 | Apache-2.0；公開資料、code、recipes、checkpoints | Fully open 路線 | Ai2 公開完整 model flow；最適合作為「真正開源」對照與備選 |
+| Qwen3 / Qwen3.5 | Apache-2.0 | Permissive open weights | Permissive terms; the card does not publish everything needed to rebuild an equivalent system |
+| Mistral Small 3.1 | Apache-2.0 | Permissive open weights | Mistral calls it open source; vendor wording is not an OSAID certification |
+| DeepSeek-R1 Distill Qwen | MIT, base Qwen2.5 Apache-2.0 | Permissive open weights | Report and weights are public; the 800K distillation set is not fully reconstructible |
+| gpt-oss | Apache-2.0 plus a usage policy | Permissive open weights | OpenAI itself calls it **open-weight**, not a fully open model flow |
+| Llama 3.x | Community License + AUP | Custom-licence open weights; **not OSI** | Use policy, a 700M MAU condition, distribution and naming obligations |
+| Gemma 3 | Gemma Terms + Prohibited Use Policy | Custom terms; **not OSI** | Use and distribution constrained by prohibited-use and notice clauses |
+| Olmo 3 | Apache-2.0; public data, code, recipes, checkpoints | Fully open track | Ai2 publishes the whole model flow — the best "genuinely open" comparison |
 
-主要條款的一手來源：[Qwen3-8B](https://huggingface.co/Qwen/Qwen3-8B)、[Qwen3.5-9B LICENSE](https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/LICENSE)、[Mistral Small 3.1](https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503)、[DeepSeek-R1 LICENSE 說明](https://github.com/deepseek-ai/DeepSeek-R1#7-license)、[gpt-oss model card](https://openai.com/index/gpt-oss-model-card/)、[Llama 3.1 license](https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE)、[Gemma Terms](https://ai.google.dev/gemma/terms)、[Olmo 3 model flow](https://allenai.org/blog/olmo3)。OSI 對 Llama 3.x 的結論見 [Meta’s LLaMa license is still not Open Source](https://opensource.org/blog/metas-llama-license-is-still-not-open-source)。
+Sources: [Qwen3-8B](https://huggingface.co/Qwen/Qwen3-8B) ·
+[Qwen3.5-9B LICENSE](https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/LICENSE) ·
+[Mistral Small 3.1](https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503) ·
+[DeepSeek-R1 licence](https://github.com/deepseek-ai/DeepSeek-R1#7-license) ·
+[gpt-oss model card](https://openai.com/index/gpt-oss-model-card/) ·
+[Llama 3.1 licence](https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE) ·
+[Gemma Terms](https://ai.google.dev/gemma/terms) ·
+[Olmo 3 model flow](https://allenai.org/blog/olmo3) ·
+[OSI on Llama 3.x](https://opensource.org/blog/metas-llama-license-is-still-not-open-source)
 
-對 PRD 的直接建議：第 6、7 節的「本地開源模型」應在後續修訂時改為「本地部署模型（優先採寬鬆授權的 open-weight 模型）」，另設一個 `model_license_reviewed_at` 或 release checklist，而不是讓 runtime 選型代替模型授權審查。Ollama／llama.cpp 的 MIT 授權不會覆蓋其下載的模型權重。[Ollama LICENSE](https://github.com/ollama/ollama/blob/main/LICENSE)、[llama.cpp LICENSE](https://github.com/ggml-org/llama.cpp/blob/master/LICENSE)
+The practical consequence: say "locally deployed model, preferring permissively licensed
+open weights" rather than "local open source model", and record the weight licence, use
+policy and attribution obligations on a release checklist. A runtime's own licence covers
+nothing about the weights it downloads —
+[Ollama](https://github.com/ollama/ollama/blob/main/LICENSE) and
+[llama.cpp](https://github.com/ggml-org/llama.cpp/blob/master/LICENSE) are both MIT, and
+that says nothing about the model.
 
-## 4. 候選模型比較
+## 4 · The candidates
 
-### 4.1 快速比較
+File sizes are Ollama's default artifact — weights on disk, not runtime memory. Running also
+needs the KV cache, compute buffers and the runtime itself, and a larger context costs more.
 
-檔案大小取自 Ollama 官方 library 的預設 artifact；它是磁碟上的權重大小，不等於執行時總記憶體。執行還需要 KV cache、運算 buffers 與 runtime，context 越大用量越高。
-
-| 候選 | 參數／架構 | 官方 context | Ollama artifact | 中文／多語 | 授權分類 | 24 GB M4 判斷 |
+| Candidate | Parameters | Context | Ollama artifact | Languages | Licence | On a 24 GB M4 |
 |---|---|---:|---:|---|---|---|
-| **Qwen3.5 9B** | 9B dense hybrid attention | 262K native | **6.6 GB** | 201 languages／dialects | Apache-2.0 open weights | **首選；16K 有充足餘裕** |
-| Qwen3 8B | 8.2B dense | 32K native；YaRN 131K | 5.2 GB Q4_K_M | 100+ languages／dialects | Apache-2.0 open weights | **穩定回退** |
-| Gemma 3 12B IT | 12B dense, multimodal | 128K；output 8K | 8.1 GB Q4_K_M | 140+ languages | Gemma custom terms | 可跑；條款與中文優勢不如 Qwen |
-| Llama 3.1 8B Instruct | 8B dense | 128K | 4.9 GB | 官方列 8 languages | Llama custom license | 可跑；中文與授權皆不優先 |
-| Mistral Small 3.1 24B | 24B dense, multimodal | 128K | — | 24 languages | Apache-2.0 open weights | **不選；官方門檻為量化後 32 GB Mac** |
-| DeepSeek-R1 Distill Qwen 7B | Qwen2.5-Math 7B distill | Ollama 標示 128K | 4.7 GB Q4_K_M | reasoning／中文評測佳 | MIT + 底模 Apache-2.0 open weights | 可跑；不適合預設的短受限生成 |
-| gpt-oss 20B | 21B total／3.6B active MoE | 128K | 14 GB MXFP4 | 官方稱 mostly English | Apache-2.0 open weights | 可跑但餘裕小；第二階段實驗 |
-| Olmo 3 7B Instruct | 7B dense | 64K | 4.5 GB Q4_K_M | 主要競爭力不是中文 | Fully open model flow | 真開源備選；需以中文任務集驗證 |
+| **Qwen3.5 9B** | 9B dense hybrid attention | 262K native | **6.6 GB** | 201 | Apache-2.0 | **First choice; 16K leaves real headroom** |
+| Qwen3 8B | 8.2B dense | 32K native, 131K with YaRN | 5.2 GB | 100+ | Apache-2.0 | **Conservative fallback** |
+| Gemma 3 12B IT | 12B dense, multimodal | 128K, 8K output | 8.1 GB | 140+ | Gemma custom | Runs; terms are worse and vision is unused |
+| Llama 3.1 8B Instruct | 8B dense | 128K | 4.9 GB | 8 listed | Llama custom | Runs; neither language coverage nor licence favours it |
+| Mistral Small 3.1 24B | 24B dense | 128K | — | 24 | Apache-2.0 | **Excluded; the vendor states 32 GB Macs** |
+| DeepSeek-R1 Distill Qwen 7B | Qwen2.5-Math 7B distill | 128K | 4.7 GB | strong reasoning | MIT | Runs; wrong shape for short constrained generation |
+| gpt-oss 20B | 21B total / 3.6B active MoE | 128K | 14 GB | mostly English | Apache-2.0 | Runs, little headroom; a second-round experiment |
+| Olmo 3 7B Instruct | 7B dense | 64K | 4.5 GB | English-leaning | Fully open | The genuinely open alternative; must be evaluated on the real task set |
 
-來源：[Qwen3.5 官方 model card](https://huggingface.co/Qwen/Qwen3.5-9B)、[Qwen3.5 Ollama tags](https://ollama.com/library/qwen3.5)、[Qwen3-8B 官方 model card](https://huggingface.co/Qwen/Qwen3-8B)、[Qwen3 Ollama tags](https://ollama.com/library/qwen3/tags)、[Gemma 3 model card](https://ai.google.dev/gemma/docs/core/model_card_3)、[Gemma 3 Ollama tags](https://ollama.com/library/gemma3/tags)、[Meta Llama models table](https://github.com/meta-llama/llama-models#llama-models)、[Llama 3.1 Ollama](https://ollama.com/library/llama3.1)、[Mistral Small 3.1 官方 model card](https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503)、[DeepSeek-R1 repo](https://github.com/deepseek-ai/DeepSeek-R1)、[DeepSeek-R1 Ollama tags](https://ollama.com/library/deepseek-r1/tags)、[gpt-oss 官方介紹](https://openai.com/index/introducing-gpt-oss/)、[gpt-oss Ollama](https://ollama.com/library/gpt-oss)、[Olmo 3 官方 model card](https://huggingface.co/allenai/Olmo-3-7B-Instruct)、[Olmo 3 Ollama](https://ollama.com/library/olmo-3)。
+### Qwen3.5 9B — recommended
 
-### 4.2 Qwen3.5 9B：推薦
+Nine billion parameters, 32 layers, hybrid Gated DeltaNet and full attention, 262,144 native
+context, 201 languages claimed. The vendor's IFEval 88.9 and IFBench 69.0 are a reason to
+shortlist it, not a substitute for a product evaluation.
+[Model overview](https://huggingface.co/Qwen/Qwen3.5-9B#model-overview)
 
-Qwen3.5-9B 的官方卡列出 9B、32 層、混合 Gated DeltaNet／full attention、262,144 native context，並聲稱支援 201 種語言與方言。官方自評的 IFEval 88.9、IFBench 69.0 與多語基準是值得進入 shortlist 的訊號，但不能替代本產品 schema eval。[Qwen3.5-9B model overview 與官方 eval](https://huggingface.co/Qwen/Qwen3.5-9B#model-overview)
+In its favour: a 6.6 GB artifact leaves far more KV cache and application room than a
+14-24 GB candidate; instruction following and agent behaviour are exactly what the five
+prompts need; 16K is a small fraction of native context, so no RoPE extension is involved;
+and the artifact is official rather than an unvetted third-party GGUF.
 
-優點：
+Against it: Qwen3.5 reasons by default, and unlike Qwen3 there is no `/think` soft switch —
+the official examples disable it with `enable_thinking: false`.
+[Non-thinking mode](https://huggingface.co/Qwen/Qwen3.5-9B#instruct-or-non-thinking-mode)
+Through Ollama's OpenAI path that means sending `reasoning_effort: "none"` and verifying the
+reasoning does not leak into the JSON. The architecture is also newer than Qwen3's, so pin
+the Ollama version and the model digest rather than a mutable tag.
 
-- 在 24 GB 機器上，6.6 GB artifact 比 14–24 GB 級候選保留更多 KV cache 與 application 空間。
-- 中英文、多語、instruction following 與 agent 能力都直接對準本產品。
-- 16K 只占模型原生 context 的小部分，無需 RoPE extension。
-- Ollama 官方 model 可直接下載，不依賴未審核的第三方 GGUF。
-- Apache-2.0 權重比 Llama／Gemma custom terms 更易納入產品，但仍不應標成已驗證的 OSAID model。
+### Qwen3 8B — the fallback
 
-風險：
+8.2B dense, 32,768 native context, extensible to 131,072 with YaRN, an explicit
+thinking/non-thinking switch, 100+ languages. 16K needs no YaRN, and the vendor warns that
+static YaRN can hurt short-context behaviour.
+[Model card](https://huggingface.co/Qwen/Qwen3-8B) ·
+[Qwen3 release](https://qwenlm.github.io/blog/qwen3/)
 
-- Qwen3.5 預設會 thinking，且不像 Qwen3 使用 `/think`／`/nothink` soft switch；官方 API 範例以 `enable_thinking: false` 關閉。[Qwen3.5 non-thinking 說明](https://huggingface.co/Qwen/Qwen3.5-9B#instruct-or-non-thinking-mode)
-- 因此 guru-core 透過 Ollama OpenAI-compatible API 時，應送 `reasoning_effort: "none"`，並驗證 response 中不會把 reasoning 混入 JSON。Ollama 官方列此欄位為支援項。[Ollama OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility)
-- 新架構比 Qwen3 更年輕；demo 要 pin Ollama 版本與 model digest，不能只 pin mutable tag。
+Older, but with mature runtime support and a very light 5.2 GB artifact. It is the painless
+fallback if Qwen3.5 misses a gate — not a reasoning distill.
 
-### 4.3 Qwen3 8B：保守回退
+### Gemma 3 12B IT
 
-Qwen3-8B 是 8.2B dense model，原生 32,768 context，可用 YaRN 延伸至 131,072；支援 thinking／non-thinking 切換、100+ 語言與 agent／tool use。對 PRD 的 16K 不需啟用 YaRN，官方也警告 static YaRN 可能降低短 context 表現。[Qwen3-8B 官方 model card](https://huggingface.co/Qwen/Qwen3-8B)、[Qwen3 官方發布](https://qwenlm.github.io/blog/qwen3/)
+128K input, 8,192 output, 140+ languages, image input, 8.1 GB at Q4_K_M.
+[Model card](https://ai.google.dev/gemma/docs/core/model_card_3) ·
+[Ollama tags](https://ollama.com/library/gemma3/tags)
 
-它較推薦模型舊，但 runtime 支援成熟、5.2 GB Q4_K_M 很輕，適合作為「Qwen3.5 schema eval 未達標」時的無痛回退，而不是 DeepSeek reasoning distill。
+Not first choice: the MVP needs no vision, the Gemma Terms carry a prohibited-use policy and
+distribution obligations, and the artifact is larger. A reasonable second non-reasoning
+baseline.
 
-### 4.4 Gemma 3 12B IT
+### Llama 3.x
 
-Gemma 3 有 1B／4B／12B／27B；4B、12B、27B 為 128K input context，輸出上限 8,192，支援 140+ 語言與 image input。Ollama 的 12B Q4_K_M 為 8.1 GB，記憶體上適合這台 Mac。[Gemma 3 官方 model card](https://ai.google.dev/gemma/docs/core/model_card_3)、[Gemma 3 Ollama tags](https://ollama.com/library/gemma3/tags)
+The candidate that fits this hardware is Llama 3.1 8B Instruct (128K, 4.9 GB), not 70B or
+405B. [Meta's model table](https://github.com/meta-llama/llama-models#llama-models)
 
-不列首選的原因是：guru-core MVP 不需要 vision；Gemma Terms 帶有 Prohibited Use Policy 與分發義務；官方多語覆蓋雖佳，但 Qwen 對中文產品更直接，且 artifact 更小。它可作為第二個非 reasoning baseline。
+Mature ecosystem, but the Community License carries an acceptable-use policy, a 700M MAU
+condition and `Built with Llama` naming obligations, and the release lists eight supported
+languages. Neither the licence nor the coverage argues for it over Qwen.
+[Licence](https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE)
 
-### 4.5 Llama 3.x
+### Mistral Small 3.x
 
-能合理放進此硬體的主力是 Llama 3.1 8B Instruct（128K、Ollama 4.9 GB），不是 70B／405B；Llama 3.2 1B／3B 更省資源，但對巢狀計畫生成品質風險更高。Meta 官方表列 Llama 3.1 支援 8B／70B／405B 與 128K context。[Meta llama-models table](https://github.com/meta-llama/llama-models#llama-models)、[Llama 3.1 Ollama](https://ollama.com/library/llama3.1)
+24B, 128K, 24 languages, Apache-2.0, positioned for function calling and local sensitive
+data. The vendor explicitly states a quantised deployment suits a single RTX 4090 or a
+**32 GB RAM MacBook**, which is decisive evidence against it here.
+[Release](https://mistral.ai/news/mistral-small-3-1/) ·
+[Model card](https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503)
 
-它的生態成熟且可跑，但 Llama 3.1 Community License 包含 Acceptable Use Policy、700M MAU 條件、`Built with Llama`／衍生模型命名等要求，不是 OSI license；而官方發布只列八種支援語言，對繁體中文產品沒有選 Qwen 的理由。[Llama 3.1 license](https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE)、[Meta Llama 3.1 官方發布](https://ai.meta.com/blog/meta-llama-3-1/)
+3.1 is now retired in favour of Small 4, which is 119B total / ~6B active and needs multiple
+H100/H200 or B200 cards — plainly not a local demo.
+[Lifecycle](https://docs.mistral.ai/models/mistral-small-3-1-25-03) ·
+[Small 4](https://mistral.ai/news/mistral-small-4/)
 
-### 4.6 Mistral Small 3.x
+### DeepSeek-R1 distilled
 
-Mistral Small 3.1 是 24B、128K、24-language、Apache-2.0 model，官方定位包含 function calling、長文件與本地敏感資料用途。然而官方明寫量化後適合「單 RTX 4090 或 **32 GB RAM MacBook**」，因此不能把它列為這台 24 GB Mac 的可靠 demo 模型。[Mistral Small 3.1 官方發布](https://mistral.ai/news/mistral-small-3-1/)、[官方 model card](https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503)
+The runnable version is `DeepSeek-R1-Distill-Qwen-7B` (4.7 GB), fine-tuned from
+Qwen2.5-Math-7B on 800K R1 samples and released under MIT. Its advantages concentrate in
+maths, code and long reasoning.
+[Repository](https://github.com/deepseek-ai/DeepSeek-R1) ·
+[Technical report](https://arxiv.org/abs/2501.12948)
 
-截至研究日，Mistral 官方已將 3.1 標為 retired、建議新 integration 使用 Small 4；但 Small 4 為 119B total／約 6B active，官方最低部署基礎設施是多張 H100/H200 或 B200，顯然不適合本機 24 GB demo。[Mistral Small 3.1 model lifecycle](https://docs.mistral.ai/models/mistral-small-3-1-25-03)、[Mistral Small 4 官方發布](https://mistral.ai/news/mistral-small-4/)
+Wrong default here: the vendor recommends avoiding a system prompt and a temperature of
+0.5-0.7, and it tends toward long chains of thought — all in tension with a prompt registry,
+low-temperature JSON schema work and a 4,000-token output budget. Keep it as an experiment
+for the harder judgement calls, not as the general instruct model.
+[Usage recommendations](https://github.com/deepseek-ai/DeepSeek-R1#usage-recommendations)
 
-### 4.7 DeepSeek-R1 distilled
+### gpt-oss 20B
 
-可行版本是 `DeepSeek-R1-Distill-Qwen-7B`（Ollama 4.7 GB），不是 671B 原模型。它由 Qwen2.5-Math-7B 以 800K DeepSeek-R1 樣本 fine-tune，MIT 發布；官方評測顯示 7B distill 的優勢集中在數學、程式與長 reasoning。[DeepSeek-R1 repo](https://github.com/deepseek-ai/DeepSeek-R1)、[DeepSeek-R1 technical report](https://arxiv.org/abs/2501.12948)、[Ollama artifact](https://ollama.com/library/deepseek-r1/tags)
+21B total / 3.6B active MoE, 128K context, native MXFP4, said to run in 16 GB, with function
+calling, structured outputs and adjustable reasoning effort. The Ollama artifact is 14 GB.
+[Introduction](https://openai.com/index/introducing-gpt-oss/) ·
+[Model card](https://huggingface.co/openai/gpt-oss-20b)
 
-它不適合作為 guru-core 預設：官方建議避免 system prompt、溫度 0.5–0.7，並可能產生長 CoT；這與 PRD 的 system/prompt abstraction、低溫 JSON schema、800–4,000 output token budget 有張力。它可以留作「策略可行性或複雜修訂 reasoning」實驗，不應因 reasoning benchmark 高就取代一般 instruct model。[DeepSeek 官方 usage recommendations](https://github.com/deepseek-ai/DeepSeek-R1#usage-recommendations)
+An attractive second-round candidate on schema ability, but 14 GB of weights plus a 16K KV
+cache, Ollama, PostgreSQL, Redis and the services leaves little room, the pretraining data is
+described as mostly English, and it requires the Harmony format — which Ollama handles, at
+the price of provider-specific behaviour.
 
-### 4.8 gpt-oss 20B
+### Olmo 3 7B Instruct — the genuinely open option
 
-gpt-oss-20b 是 21B total／3.6B active MoE，128K context、原生 MXFP4，官方稱 16 GB memory 可執行，並明列 function calling、Structured Outputs 與可調 reasoning effort。Ollama artifact 為 14 GB。[OpenAI 官方介紹](https://openai.com/index/introducing-gpt-oss/)、[gpt-oss-20b model card](https://huggingface.co/openai/gpt-oss-20b)、[Ollama gpt-oss](https://ollama.com/library/gpt-oss)
+Ai2 publishes the pretraining, midtraining, long-context and post-training data, the
+training scripts, the recipes, the checkpoints and the evaluations. 7B Instruct is
+Apache-2.0, 4.5 GB, 64K context, with instruction following and function calling.
+[Release](https://allenai.org/blog/olmo3) ·
+[Training source](https://github.com/allenai/OLMo-core/tree/main/src/scripts/official/OLMo3) ·
+[Model card](https://huggingface.co/allenai/Olmo-3-7B-Instruct)
 
-它是 schema 能力很有吸引力的第二階段候選，但不是首選：14 GB 權重在 24 GB unified memory 加上 16K KV cache、Ollama、Postgres、Redis 與 API services 後餘裕有限；官方也明確說預訓練資料「mostly English」。此外它必須使用 Harmony format，雖然 Ollama 已代為處理，仍增加 provider-specific 行為。[gpt-oss architecture/data](https://openai.com/index/introducing-gpt-oss/)、[Harmony format requirement](https://huggingface.co/openai/gpt-oss-20b)
+If "genuinely fully open" is a hard requirement, evaluate it first. Openness is not a
+substitute for passing the task set, though.
 
-### 4.9 Olmo 3 7B Instruct：真正開放的備選
+## 5 · Runtimes
 
-Ai2 公開 Olmo 3 的 pretraining／midtraining／long-context／post-training 資料、訓練 scripts、recipes、checkpoints 與評測。7B Instruct 是 Apache-2.0，Ollama artifact 4.5 GB、64K context，且官方宣稱具 instruction following 與 function calling 能力。[Olmo 3 官方發布](https://allenai.org/blog/olmo3)、[官方訓練 scripts 與 data manifests](https://github.com/allenai/OLMo-core/tree/main/src/scripts/official/OLMo3)、[Olmo 3 model card](https://huggingface.co/allenai/Olmo-3-7B-Instruct)、[Ollama Olmo 3](https://ollama.com/library/olmo-3)
-
-若產品對「真正 fully open」有硬性要求，它應優先進入 eval；但目前官方強項與 benchmark 主要不足以證明繁體中文計畫生成，所以不能僅靠 openness 取代中文任務實測。
-
-## 5. Runtime 比較
-
-| Runtime | Apple M4 | OpenAI-compatible | Schema 約束 | 維護成本 | guru-core 適合度 |
+| Runtime | Apple M4 | OpenAI-compatible | Schema constraint | Maintenance | Fit |
 |---|---|---|---|---|---|
-| **Ollama** | 原生 Apple GPU／Metal | Chat、Completions、Models、Embeddings、Responses 的部分相容 | `response_format` JSON Schema；native API 用 `format` | 最低；下載／管理／服務整合 | **demo 首選** |
-| llama.cpp | Apple Silicon 是 first-class；Metal | `llama-server` 提供 Chat／Responses 等，但不承諾完整規格 | JSON Schema → GBNF；可全局 grammar | 中高；自行管理 GGUF、參數、模板 | 精細控制／可重現 benchmark 首選 |
-| MLX-LM | Apple Silicon 原生 | 簡易、類 OpenAI server | 未把 schema enforcement 當主要 server contract | 中；Python／HF 模型管理 | 模型研究與 LoRA；不建議當目前 provider server |
-| vLLM | 2026 已有 experimental macOS CPU 與 community `vLLM-Metal` plugin | 完整部署生態強 | guided／structured output 強 | 本機最高；需 build／plugin | Linux GPU production 候選，不是最快 demo 路徑 |
+| **Ollama** | Native Metal | Chat, Completions, Models, Embeddings | `response_format` JSON Schema | Lowest | **Demo choice** |
+| llama.cpp | First-class Apple Silicon | `llama-server`, no full-spec promise | JSON Schema → GBNF | Medium-high | Best for reproducible benchmarks |
+| MLX-LM | Native Apple Silicon | "Intended to be similar" | Not a server contract | Medium | Model research and LoRA |
+| vLLM | Experimental macOS CPU, community Metal plugin | Strong | Strong guided output | Highest locally | Linux GPU production |
 
-### 為何選 Ollama
+### Why Ollama
 
-Ollama 原生支援 macOS／Apple M 系列 GPU、CLI、模型管理、REST API 和 OpenAI-compatible endpoint；structured outputs 可直接接 Pydantic `model_json_schema()`，官方建議低 temperature，且可在 OpenAI path 使用 `response_format`。[Ollama macOS](https://docs.ollama.com/macos)、[Structured Outputs](https://docs.ollama.com/capabilities/structured-outputs)、[OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility)
+Native macOS and Apple GPU support, model management, a REST API and an OpenAI-compatible
+endpoint; structured outputs take a Pydantic `model_json_schema()` directly, and the vendor
+recommends a low temperature. [macOS](https://docs.ollama.com/macos) ·
+[Structured outputs](https://docs.ollama.com/capabilities/structured-outputs) ·
+[OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility)
 
-Mac 上不要把 Ollama server 放進 Docker。Ollama 官方 FAQ 明確指出 Docker Desktop for macOS 不支援 GPU passthrough；容器化只會失去 Apple GPU 加速。應讓 Ollama 原生跑在 host，guru-core services 再連 `host.docker.internal:11434`（若 services 在 Docker）或 `localhost:11434`（若 services 在 host）。[Ollama Docker](https://docs.ollama.com/docker)、[Ollama FAQ](https://docs.ollama.com/faq)
+**Do not put the Ollama server in Docker on a Mac.** Docker Desktop for macOS has no GPU
+passthrough, so containerising it only loses Apple GPU acceleration. Run it on the host and
+point the services at `host.docker.internal:11434`.
+[Docker](https://docs.ollama.com/docker) · [FAQ](https://docs.ollama.com/faq)
 
-### llama.cpp 的位置
+### Where llama.cpp fits
 
-llama.cpp 支援 Metal、GGUF、多種量化、CPU/GPU hybrid offload，以及 `llama-server` OpenAI-compatible API。其 schema-constrained JSON 可把 JSON Schema 轉成 GBNF，適合做嚴格 benchmark 與追查 grammar 行為。[llama.cpp README](https://github.com/ggml-org/llama.cpp)、[llama-server API](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)、[JSON Schema grammar](https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md)
+Metal, GGUF, many quantisations, hybrid CPU/GPU offload and an OpenAI-compatible
+`llama-server`. Its schema constraint compiles JSON Schema into a GBNF grammar, which makes
+it the right tool for a strict benchmark and for chasing grammar behaviour.
+[README](https://github.com/ggml-org/llama.cpp) ·
+[Server](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md) ·
+[Grammars](https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md)
 
-代價是 guru-core 必須自行 pin GGUF、chat template、context、batch、Metal offload 與 server flags；作為一鍵 demo 的第一版沒有必要。
+The price is pinning the GGUF, chat template, context, batch size, Metal offload and server
+flags yourself — unnecessary for a first one-command demo.
 
-### MLX-LM 與 vLLM
+### MLX-LM and vLLM
 
-MLX-LM 專為 Apple Silicon 的生成、quantization 與 fine-tuning 設計，但官方 server 只稱「intended to be similar」於 OpenAI API，並明確不建議 production。它更適合模型實驗，不適合拿來驗證 PRD 已定義的通用 provider contract。[MLX-LM README](https://github.com/ml-explore/mlx-lm)、[MLX-LM server](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/SERVER.md)
+MLX-LM is built for Apple Silicon generation, quantisation and fine-tuning, but its server
+is only "intended to be similar" to the OpenAI API and is explicitly not recommended for
+production. [README](https://github.com/ml-explore/mlx-lm) ·
+[Server](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/SERVER.md)
 
-vLLM 對 Linux GPU production 很合理；但在 Apple Silicon 上，官方 CPU 支援仍是 experimental，GPU 需 community-maintained vLLM-Metal plugin。對這次「最快本地 demo」沒有勝過 Ollama。[vLLM Apple Silicon installation](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/?device=apple)
+vLLM is a sound Linux GPU production choice, but on Apple Silicon its CPU support is
+experimental and GPU needs a community Metal plugin.
+[Apple Silicon installation](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/?device=apple)
 
-## 6. 24 GB M4 的容量判斷
+## 6 · What fits in 24 GB
 
-已實機確認：Apple M4、10 CPU cores、10 GPU cores、24 GB unified memory，Metal 3；磁碟尚有約 597 GiB，因此瓶頸是 shared memory 與 context，不是下載容量。
+Measured on the machine: Apple M4, 10 CPU cores, 10 GPU cores, 24 GB unified memory, Metal 3.
+The constraint is shared memory and context, not disk.
 
-### 建議安全帶
+- Keep the demo model at a **6-9 GB Q4 artifact**. Weights, a 16K KV cache, the runtime and
+  the application services then still leave sensible headroom.
+- 14 GB `gpt-oss:20b` is testable; do not keep two large models resident.
+- 17-20 GB artifacts (Gemma 3 27B, Qwen3 30B-A3B, DeepSeek 32B) may load without running
+  stably at 16K context and 4K generation alongside the full stack.
+- Mistral Small 3.1's own 32 GB guidance is explicit exclusion evidence.
+- Start with LLM concurrency **1**. Measure single-request correctness and memory first.
 
-- 以 **6–9 GB 級 Q4 artifact** 作 demo 主力；權重、16K KV cache、runtime 與 application services 後仍有合理 headroom。
-- 14 GB `gpt-oss:20b` 可測，但不要同時把多個大模型常駐。
-- 17–20 GB artifact（Gemma 3 27B、Qwen3 30B-A3B、DeepSeek 32B）雖可能「勉強載入」，不代表 16K context、4K generation 與完整 stack 能穩定運行；不列 demo 預設。
-- Mistral Small 3.1 官方明列 32 GB Mac，是明確排除證據。
-- demo 初期將 LLM worker 併發設為 **1**；完成單請求 correctness 與記憶體量測後再測 2。
+### Set the context explicitly
 
-### 必須顯式設定 context
+Ollama picks a context from available VRAM: 4K below 24 GiB, 32K between 24 and 48 GiB — and
+24 GB sits exactly on that boundary, so the automatic choice cannot be trusted. Set
+`OLLAMA_CONTEXT_LENGTH=16384` at startup and confirm with `ollama ps`.
+[Context length](https://docs.ollama.com/context-length)
 
-Ollama 會依可用 VRAM 自動選 context：官方預設在 `<24 GiB` 為 4K、`24–48 GiB` 為 32K，而且 context 越大越耗記憶體。24 GB unified memory 恰在邊界，不能依賴自動判斷；PRD 要求 16K，啟動時應顯式設 `OLLAMA_CONTEXT_LENGTH=16384`，再以 `ollama ps` 確認配置與 offload。[Ollama context length](https://docs.ollama.com/context-length)
+A model supporting 128K does not mean opening 128K locally. Input and output share the
+allocated context: at 16,384 with 4,000 reserved for output, the assembled prompt has a hard
+ceiling around 12K, minus chat-template tokens. Truncate deterministically before that,
+rather than letting the runtime silently cut.
 
-模型支援 128K／256K 不代表本機應開滿。PRD 的 input + output 必須共同落在 allocated context 內；在 16,384 上，`generate` 若保留 4,000 output，組裝後 prompt 的硬上限應約 12K，還需預留 chat template tokens。超過時應先 deterministic truncation／summarization，而不是讓 runtime 默默截斷。
+### The measured smoke test
 
-### 本機 demo 實測
+2026-09-05, Ollama 0.33.2, `qwen3.5:9b` digest `6488c96fa5fa`,
+`OLLAMA_CONTEXT_LENGTH=16384`, `reasoning_effort: none`, over
+`/v1/chat/completions`:
 
-2026-09-05 以 Ollama 0.33.2、`qwen3.5:9b` digest `6488c96fa5fa`、`OLLAMA_CONTEXT_LENGTH=16384`、`reasoning_effort: none`，透過 OpenAI-compatible `/v1/chat/completions` 發送繁中 readiness JSON Schema：
-
-| 項目 | 結果 |
+| | Result |
 |---|---|
-| 模型載入 | `ollama ps`：5.9 GB、100% GPU、context 16,384 |
-| 冷啟／首輪總耗時 | 25.40 秒（96 input + 272 output tokens） |
-| 加強 prompt 與 invariant 後暖機耗時 | 17.08 秒、14.01 秒 |
-| 最後一輪 decode | 約 15.9 tokens/s（Ollama server timing） |
-| Transport / JSON Schema | 三輪皆可解析並符合欄位型別／數量 schema |
-| 業務規則 | 首輪把題目文字錯放進 `missing[]`；第二輪出現 `ready=true` 但仍有缺項；加入明確 invariant 後第三輪通過 |
+| Model load | `ollama ps`: 5.9 GB, 100% GPU, context 16,384 |
+| Cold first round | 25.40 s (96 input + 272 output tokens) |
+| Warm rounds after tightening the prompt | 17.08 s, 14.01 s |
+| Final decode rate | about 15.9 tokens/s |
+| Transport and JSON Schema | all three rounds parsed and matched the schema |
+| Business rules | round one misplaced a field; round two broke an invariant while staying well-formed; round three passed once the invariant was stated explicitly |
 
-這個樣本只能證明本機路徑可跑，以及 reveal 出 validator 必要性；單一 prompt、暖機 cache 與短 input 不能外推 production latency 或品質。完整結論仍以第 9 節的固定 eval set 為準。
+That sample proves the local path works and that the validator is not optional. One prompt,
+a warm cache and a short input say nothing about production latency or quality — section 8
+is what decides that.
 
-## 7. 對 PRD LLM 章節的評估
+## 7 · Consequences for the code
 
-### 已做對的部分
+What the architecture already gets right:
 
-- `LLMPort` 隔離 use case 與供應商 SDK，且 model／temperature／token 上限留在 adapter 設定。
-- 本地與雲端共用 OpenAI-compatible adapter，切換面積小。
-- provider schema 約束後仍做 Pydantic 與業務規則驗證，失敗回灌、有限重試、最後保守降級；這是正確的 defense in depth。
-- deterministic scheduler、難度推導、diff、role model 粗篩不交給 LLM，大幅降低小模型負擔。
-- prompt/version/model/token/latency/retry/fallback 觀測足以支援後續實證選型。
+- `LLMPort` isolates use cases from any vendor SDK; model, temperature and token limits stay
+  in adapter configuration.
+- Local and hosted share one OpenAI-compatible adapter, so switching is small.
+- Provider-side schema constraint is followed by Pydantic **and** business-rule validation,
+  with violations fed back, bounded retries and a stated fallback. Defence in depth.
+- The deterministic core never reaches a model at all, which is the largest single reduction
+  in what a small model has to get right.
+- Per-call observability — prompt, version, model, tokens, latency, attempts, degraded — is
+  enough to make the next selection empirical rather than argued.
 
-### 需要補齊的決策
+What still needs deciding or finishing:
 
-1. **選定 demo baseline**：`qwen3.5:9b` + Ollama；pin Ollama version、model tag 與 digest。不要只寫「模型之後再定」。
-2. **顯式 context**：啟動環境設 `OLLAMA_CONTEXT_LENGTH=16384`；啟動後檢查 `/v1/models`、`ollama ps` 與一次 16K prefill。
-3. **關閉非必要 reasoning**：`evaluate`、`generate`、`revise`、`recommend` 預設都送 `reasoning_effort: none`；若日後只對 revise 開 reasoning，應成為 purpose-level provider param。
-4. **精確定義 schema payload**：Ollama OpenAI path 使用 `response_format: {type: "json_schema", json_schema: ...}`，而不是把 `json_schema` 當抽象字串結束；adapter contract test 應確認實際 wire payload。
-5. **輸出 token mapping**：PRD 的 `max_output_tokens` 是內部名稱；Chat Completions 對 Ollama 的實際欄位是 `max_tokens`。adapter 應明確 mapping 並測試。
-6. **prompt 截斷策略**：定義 profile、document、calendar、role model、schema、output reserve 的硬預算與截斷順序。`budgets` 目前只管 role model，不足以保證總 prompt ≤ context。
-7. **併發／backpressure**：本機 demo 預設 LLM concurrency=1；超時 180 秒與 queue retry 要避免同一 model 同時堆積多次 generation。
-8. **真實 smoke test**：`check_llm.py` 不應只測「能回答」；至少逐一送四種 production schema，驗證 JSON、Pydantic、業務規則、候選 ID 約束與 retry telemetry。
-9. **runtime 相容不是模型相容**：每個新模型需驗證 chat template、reasoning 分離、schema、繁中與 context；不能因 `/v1/chat/completions` 可用就宣告可替換。
-10. **授權語言**：把「本地開源模型」改成精確分類，並在 release checklist 記錄權重 license、use policy、notice／attribution 與衍生模型條件。
+1. **Pin the baseline**: `qwen3.5:9b` on Ollama, with the Ollama version, tag and digest all
+   pinned.
+2. **Set the context explicitly** and verify it after startup.
+3. **Turn reasoning off** for all three purposes by default. If one later warrants it, that
+   belongs in `params` per purpose, not in a prompt.
+4. **Be exact about the schema payload**: Ollama's OpenAI path wants
+   `response_format: {type: "json_schema", json_schema: …}`. An adapter contract test should
+   assert the wire payload, not the intent.
+5. **Map the output token field**: `max_output_tokens` is our name; Chat Completions calls it
+   `max_tokens`.
+6. **Define a truncation budget** across profile, documents, calendar, catalogue, schema and
+   the output reserve. `budgets` currently caps the catalogue only, which does not guarantee
+   the whole prompt fits.
+7. **Concurrency and backpressure**: start at 1, and make sure a 240-second timeout plus
+   queue retries cannot stack several generations on one set of weights.
+8. **A real smoke test**: `cmd/check_llm.py` should not only prove the model answers. Send
+   each of the five production schemas and check JSON, Pydantic, the business rules and the
+   retry telemetry.
+9. **Runtime compatibility is not model compatibility.** Each new model needs its chat
+   template, reasoning separation, schema behaviour and context verified. A working
+   `/v1/chat/completions` proves none of that.
+10. **Licence language**: classify precisely, and record weights licence, use policy,
+    attribution and derivative conditions on the release checklist.
 
-## 8. Demo 配置基線與快速架設腳本
+## 8 · The acceptance matrix
 
-Repo 已提供 `scripts/local-llm.sh` 與 `scripts/llm_smoke_test.py`；使用方式見 `docs/local-llm-quickstart.md`。腳本與後續應用實作共同固定以下 contract：
+Do not pick a product model on MMLU or an arena score. Build a fixed, de-identified guru-core
+evaluation set — at least 30-50 cases per prompt, covering mixed languages, long documents,
+calendar conflicts, missing information and hostile document content.
 
-```text
-Runtime:              Ollama, native macOS
-Model:                qwen3.5:9b
-Model artifact:       pin resolved digest after pull
-LLM_BASE_URL:         http://localhost:11434/v1
-LLM_API_KEY:          ollama (required by client, ignored by Ollama)
-LLM_MODEL:            qwen3.5:9b
-LLM_MAX_CONTEXT:      16384
-OLLAMA_CONTEXT_LENGTH:16384
-structured_output:    json_schema
-reasoning_effort:     none
-concurrency:          1
-```
-
-若 guru-core services 跑在 Docker，`LLM_BASE_URL` 應改成 `http://host.docker.internal:11434/v1`，Ollama 仍留在 macOS host。
-
-建議一鍵腳本依序做：
-
-1. 檢查 Apple Silicon、macOS 版本、可用記憶體與磁碟。
-2. 檢查／安裝 Ollama；啟動 host service 並等待 health endpoint。
-3. `ollama pull qwen3.5:9b`，解析並記錄 digest。
-4. 以 16K context 啟動／重啟 service。
-5. 檢查 `/v1/models` 與 `ollama ps`。
-6. 發出一個帶嚴格 JSON Schema、繁體中文內容、`reasoning_effort: none` 的 smoke request。
-7. 用 Pydantic 驗證 response；失敗時顯示 server log 與退出非零碼。
-8. 匯出 guru-core 所需環境變數後才啟動 application stack。
-
-## 9. 上線前的模型驗收矩陣
-
-不要以 MMLU／Arena 直接決定產品模型。建立固定、去識別的 guru-core eval set，每種 prompt 至少 30–50 筆，包含繁中、英文、混合語言、長文件、Calendar 衝突、缺資訊與惡意文件內容。
-
-| 指標 | 建議 demo gate | 測法 |
+| Metric | Demo gate | How |
 |---|---:|---|
-| JSON parse success | ≥ 99%（含最多 3 次重試） | 四個 schema 各自統計，不只總平均 |
-| Pydantic schema success | ≥ 98% 首次；≥ 99% 重試後 | 記錄欄位缺失、型別錯、extra field |
-| 業務規則 success | ≥ 95% 首次；≥ 99% 重試／fallback 後 | pacing、題數、候選 ID、template keys |
-| 繁中可讀性 | 人評 ≥ 4/5 | 台灣用語、無簡繁混亂、任務具體可做 |
-| 不忠實引用輸入 | 0 個非法 candidate ID | role model recommendation 做 set membership |
-| 16K context 穩定 | 100% 無 OOM／截斷 | 最長 prompt + 4K output reserve，連續至少 20 次 |
-| 延遲 | 先量 baseline，再設產品 SLO | 分 prefill、time-to-first-token、decode、總耗時 |
-| fallback rate | < 1% | 按 prompt_name 與模型版本切分 |
+| JSON parse success | ≥ 99% within 3 retries | per schema, not one average |
+| Pydantic schema success | ≥ 98% first try; ≥ 99% after retries | record missing fields, wrong types, extra fields |
+| Business-rule success | ≥ 95% first try; ≥ 99% after retries or fallback | five evidence items, both stances, citations resolve, milestone keys unique, task weeks in range |
+| Citation integrity | **0** items citing a dimension with no report | set membership, checked in `verdict_violations` |
+| Readability of the note | human ≥ 4/5 | specific, actionable, no grading language |
+| 16K context stability | 100%, no OOM or truncation | longest prompt plus 4K reserve, 20 consecutive runs |
+| Latency | measure a baseline, then set an SLO | prefill, time to first token, decode, total |
+| Fallback rate | < 1% | split by `prompt_name` and model version |
 
-至少比較 `qwen3.5:9b`、`qwen3:8b`、`olmo-3:7b-instruct`；若記憶體量測仍有餘裕，再加入 `gpt-oss:20b`。只有當 Qwen3.5 未通過 gate，才以證據換模型或切雲端，避免用供應商 benchmark 代替產品決策。
+Compare at least `qwen3.5:9b`, `qwen3:8b` and `olmo-3:7b-instruct`; add `gpt-oss:20b` if the
+memory measurements leave room. Change model only when Qwen3.5 misses a gate, and change it
+on that evidence rather than on someone else's benchmark.
 
-## 10. 引用來源索引
+## 9 · Sources
 
-### 模型與授權
+**Models and licences** —
+[Qwen3 release](https://qwenlm.github.io/blog/qwen3/) ·
+[Qwen3-8B](https://huggingface.co/Qwen/Qwen3-8B) ·
+[Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B) ·
+[Qwen3.5 LICENSE](https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/LICENSE) ·
+[Gemma 3 model card](https://ai.google.dev/gemma/docs/core/model_card_3) ·
+[Gemma Terms](https://ai.google.dev/gemma/terms) ·
+[Gemma Prohibited Use Policy](https://ai.google.dev/gemma/prohibited_use_policy) ·
+[Llama model table](https://github.com/meta-llama/llama-models#llama-models) ·
+[Llama 3.1 release](https://ai.meta.com/blog/meta-llama-3-1/) ·
+[Llama 3.1 licence](https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE) ·
+[Mistral Small 3.1](https://mistral.ai/news/mistral-small-3-1/) ·
+[Mistral Small 4](https://mistral.ai/news/mistral-small-4/) ·
+[DeepSeek-R1](https://github.com/deepseek-ai/DeepSeek-R1) ·
+[DeepSeek-R1 paper](https://arxiv.org/abs/2501.12948) ·
+[gpt-oss](https://openai.com/index/introducing-gpt-oss/) ·
+[gpt-oss model card](https://openai.com/index/gpt-oss-model-card/) ·
+[gpt-oss-20b weights](https://huggingface.co/openai/gpt-oss-20b) ·
+[Olmo 3](https://allenai.org/blog/olmo3) ·
+[Olmo 3 training source](https://github.com/allenai/OLMo-core/tree/main/src/scripts/official/OLMo3) ·
+[Olmo 3 7B Instruct](https://huggingface.co/allenai/Olmo-3-7B-Instruct) ·
+[OSAID 1.0](https://opensource.org/ai/open-source-ai-definition) ·
+[OSAID FAQ](https://opensource.org/ai/faq) ·
+[OSI on Llama](https://opensource.org/blog/metas-llama-license-is-still-not-open-source)
 
-- Qwen：[Qwen3 發布](https://qwenlm.github.io/blog/qwen3/)、[Qwen3-8B model card](https://huggingface.co/Qwen/Qwen3-8B)、[Qwen3.5-9B model card](https://huggingface.co/Qwen/Qwen3.5-9B)、[Qwen3.5 LICENSE](https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/LICENSE)
-- Google：[Gemma 3 model card](https://ai.google.dev/gemma/docs/core/model_card_3)、[Gemma Terms](https://ai.google.dev/gemma/terms)、[Gemma Prohibited Use Policy](https://ai.google.dev/gemma/prohibited_use_policy)
-- Meta：[Llama model table](https://github.com/meta-llama/llama-models#llama-models)、[Llama 3.1 發布](https://ai.meta.com/blog/meta-llama-3-1/)、[Llama 3.1 license](https://github.com/meta-llama/llama-models/blob/main/models/llama3_1/LICENSE)
-- Mistral：[Mistral Small 3.1 發布](https://mistral.ai/news/mistral-small-3-1/)、[Mistral Small 3.1 model card](https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503)、[Mistral Small 4 發布](https://mistral.ai/news/mistral-small-4/)
-- DeepSeek：[DeepSeek-R1 repository](https://github.com/deepseek-ai/DeepSeek-R1)、[DeepSeek-R1 paper](https://arxiv.org/abs/2501.12948)
-- OpenAI：[gpt-oss 發布](https://openai.com/index/introducing-gpt-oss/)、[gpt-oss model card](https://openai.com/index/gpt-oss-model-card/)、[gpt-oss-20b weights card](https://huggingface.co/openai/gpt-oss-20b)
-- Ai2：[Olmo 3 發布與 model flow](https://allenai.org/blog/olmo3)、[Olmo 3 training source](https://github.com/allenai/OLMo-core/tree/main/src/scripts/official/OLMo3)、[Olmo 3 7B Instruct card](https://huggingface.co/allenai/Olmo-3-7B-Instruct)
-- OSI：[Open Source AI Definition 1.0](https://opensource.org/ai/open-source-ai-definition)、[OSAID FAQ](https://opensource.org/ai/faq)、[Llama 3.x license 評估](https://opensource.org/blog/metas-llama-license-is-still-not-open-source)
-
-### Runtime
-
-- Ollama：[repository](https://github.com/ollama/ollama)、[macOS](https://docs.ollama.com/macos)、[OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility)、[Structured Outputs](https://docs.ollama.com/capabilities/structured-outputs)、[context length](https://docs.ollama.com/context-length)、[Docker](https://docs.ollama.com/docker)、[model import](https://docs.ollama.com/import)
-- llama.cpp：[repository](https://github.com/ggml-org/llama.cpp)、[server](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md)、[grammars／JSON Schema](https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md)、[Metal build](https://github.com/ggml-org/llama.cpp/blob/master/docs/build.md#metal-build)
-- MLX-LM：[repository](https://github.com/ml-explore/mlx-lm)、[server](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/SERVER.md)
-- vLLM：[Apple Silicon installation](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/?device=apple)
+**Runtimes** —
+[Ollama](https://github.com/ollama/ollama) ·
+[macOS](https://docs.ollama.com/macos) ·
+[OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility) ·
+[Structured outputs](https://docs.ollama.com/capabilities/structured-outputs) ·
+[Context length](https://docs.ollama.com/context-length) ·
+[Docker](https://docs.ollama.com/docker) ·
+[llama.cpp](https://github.com/ggml-org/llama.cpp) ·
+[llama-server](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md) ·
+[Grammars](https://github.com/ggml-org/llama.cpp/blob/master/grammars/README.md) ·
+[MLX-LM](https://github.com/ml-explore/mlx-lm) ·
+[MLX-LM server](https://github.com/ml-explore/mlx-lm/blob/main/mlx_lm/SERVER.md) ·
+[vLLM on Apple Silicon](https://docs.vllm.ai/en/latest/getting_started/installation/cpu/?device=apple)

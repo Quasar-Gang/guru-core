@@ -1,8 +1,13 @@
-"""Shared pytest fixtures for API tests.
+"""Shared pytest fixtures.
 
 `container` / `client` / `auth_headers` are the entry points every API test builds on:
 `container` is a fully faked `ApiContainer`, `client` is an ASGI HTTP client wired to that
 same container, and `auth_headers` is a Bearer JWT header for an already-created user.
+
+`engine` is an `EngineContainer` wired to the *same* in-memory repos as `container`. In
+production the two services share one PostgreSQL; sharing the fakes keeps the test suite
+honest about that, so an application test can drive a job the API queued and read the result
+back through the API.
 """
 
 import sys
@@ -28,11 +33,48 @@ from services.api.container import (  # noqa: E402
     build_test_container,
     create_app,
 )
+from services.catalog import container as catalog_module  # noqa: E402
+from services.catalog.container import CatalogContainer  # noqa: E402
+from services.engine import container as engine_module  # noqa: E402
+from services.engine.container import EngineContainer  # noqa: E402
+
+#: `ApiContainer` field -> `EngineContainer` field, for the repos both services touch.
+_SHARED_REPOS = {
+    "profiles": "profiles",
+    "imports": "imports",
+    "documents": "documents",
+    "runs": "runs",
+    "reports": "reports",
+    "verdicts": "verdicts",
+    "role_models": "role_models",
+    "question_answers": "answers",
+    "quotas": "quotas",
+    "hypotheses": "hypotheses",
+    "plans": "plans",
+    "tree": "tree",
+    "reconciliations": "reconciliations",
+}
 
 
 @pytest.fixture
 def container() -> ApiContainer:
     return build_test_container()
+
+
+@pytest.fixture
+def engine(container: ApiContainer) -> EngineContainer:
+    """An Engine wired to the API's repos, the way both share one database in production."""
+    shared = {
+        engine_field: getattr(container, api_field)
+        for api_field, engine_field in _SHARED_REPOS.items()
+    }
+    return engine_module.build_test_container(**shared)
+
+
+@pytest.fixture
+def catalog(container: ApiContainer) -> CatalogContainer:
+    """The Catalog Service over the same `role_models` table the other two read."""
+    return catalog_module.build_test_container(role_models=container.role_models)
 
 
 @pytest.fixture
@@ -46,7 +88,7 @@ async def client(container: ApiContainer) -> AsyncIterator[httpx.AsyncClient]:
 @pytest.fixture
 async def auth_user_id(container: ApiContainer) -> UUID:
     user = await container.users.create("fixture@example.com", "fixture-sub")
-    await container.profiles.upsert(user.id, {}, "UTC")
+    await container.profiles.set_timezone(user.id, "UTC")
     return user.id
 
 

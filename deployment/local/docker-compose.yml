@@ -20,13 +20,12 @@ x-app: &app
     STORAGE_PUBLIC_BASE_URL: http://127.0.0.1:8000/v1/files
     STORAGE_SIGNING_SECRET: compose-storage-secret
     JWT_SECRET: compose-jwt-secret
-    ROLE_MODEL_API_KEY: compose-role-model-key
+    CATALOG_API_KEY: compose-catalog-key
     # Compose-only key. Every deployment generates its own; refresh tokens are
     # never stored unencrypted.
     OAUTH_TOKEN_ENC_KEY: sLrt-8fSPiXBBdQhzlz47gTMLF89k0ODWxr8NPgwQcA=
     # Local verification only. Never enable this outside compose.
     ALLOW_FAKE_LOGIN: "1"
-    ROLE_MODEL_BASE_URL: http://role-model:8001
     LLM_ADAPTER: fake
   volumes:
     - storage:/data/storage
@@ -85,12 +84,12 @@ services:
   engine:
     <<: *app
     container_name: guru-core-local-engine
-    command: ["cmd.plan_engine_worker"]
+    command: ["cmd.engine_worker"]
 
-  role-model:
+  catalog:
     <<: *app
-    container_name: guru-core-local-role-model
-    command: ["cmd.role_model_server"]
+    container_name: guru-core-local-catalog
+    command: ["cmd.catalog_server"]
     ports:
       - "8001:8001"
 

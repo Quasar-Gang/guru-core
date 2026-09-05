@@ -17,35 +17,31 @@ provider:
   # for a local runtime that holds one set of weights and one KV cache.
   concurrency: ${LLM_CONCURRENCY:-0}
 
-# Per-purpose parameters, independent of the provider.
+# Three purposes, because the system asks a model for exactly three kinds of judgement:
+# read the data, hold a shape against it, lay out the work. Everything else is arithmetic.
 # reasoning_effort is provider-specific and is only sent when non-empty: set
 # LLM_REASONING_EFFORT= (blank) when moving to a provider that does not accept it.
 # grok-4.6 rejects "none" — it always reasons — so the default is "low".
 params:
-  evaluate:
+  analyze:
     temperature: 0.2
-    max_output_tokens: 1500
+    max_output_tokens: 4000
+    reasoning_effort: ${LLM_REASONING_EFFORT:-low}
+  verdict:
+    temperature: 0.3
+    max_output_tokens: 6000
     reasoning_effort: ${LLM_REASONING_EFFORT:-low}
   generate:
     temperature: 0.4
     max_output_tokens: 4000
     reasoning_effort: ${LLM_REASONING_EFFORT:-low}
-  revise:
-    temperature: 0.3
-    max_output_tokens: 3000
-    reasoning_effort: ${LLM_REASONING_EFFORT:-low}
-  recommend:
-    temperature: 0.3
-    max_output_tokens: 800
-    reasoning_effort: ${LLM_REASONING_EFFORT:-low}
 
-# Role model context budget in tokens (PRD 12.6). Raise these together with
-# max_context_tokens when moving to a model with more room.
+# How much of the Role Model catalogue a call may carry, in tokens. The Recommender scores
+# every template at once and needs the most; the Plan Engine only needs the chosen one.
 budgets:
-  evaluate: 100
-  generate: 300
-  revise: 200
-  recommend: 600
+  analyze: 200
+  verdict: 2000
+  generate: 600
 
 retry:
   # Retries when schema or business-rule validation fails, feeding the errors back.

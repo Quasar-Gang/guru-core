@@ -18,9 +18,11 @@ SPEC = ROOT / "docs" / "api" / "openapi.json"
 
 _UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 #: path segments that are enum-valued parameters rather than ids
-_ENUMS = r"/(google|notion|markdown|google_calendar|google_sheets)(?=/|$)"
+_ENUMS = r"/(google|google_calendar|q1|q2|q3|latest)(?=/|$)"
 #: job ids are opaque strings, not uuids
 _JOB_ID = r"(?<=/v1/jobs/)[\w\-]+"
+#: shell variables stand in for ids in the runnable examples
+_SHELL_VAR = r"\$[A-Z_]+"
 
 
 def _normalise(path: str) -> str:
@@ -30,7 +32,8 @@ def _normalise(path: str) -> str:
     path = re.sub(_UUID, "{}", path)
     path = re.sub(_ENUMS, "/{}", path)
     path = re.sub(_JOB_ID, "{}", path)
-    return path
+    path = re.sub(_SHELL_VAR, "{}", path)
+    return path.split("?", 1)[0]
 
 
 @pytest.fixture(scope="module")
@@ -44,7 +47,7 @@ def spec() -> dict:
 
 
 def _mentioned(guide: str) -> set[str]:
-    found = re.findall(r"(/(?:v1/[\w{}\-./]*|health))", guide)
+    found = re.findall(r"(/(?:v1/[\w{}$\-./?=:]*|health))", guide)
     return {m for m in found if not m.endswith(".md")}
 
 
@@ -71,11 +74,12 @@ def test_examples_are_copy_pasteable(guide: str) -> None:
 
 def test_error_codes_are_ones_the_app_emits(guide: str) -> None:
     from services.api.adapters.http.app import STATUS_BY_ERROR, error_code
-    from services.api.domain.plan_status import IllegalTransition
+    from services.api.domain.errors import DomainError
 
-    # error_code takes an instance, not a class, so instantiate each one — that is
-    # also the path a real response goes through.
-    classes = set(STATUS_BY_ERROR) | {IllegalTransition}
+    # error_code takes an instance, not a class, so instantiate each one — that is also
+    # the path a real response goes through. DomainError itself is only the 500 fallback
+    # and never reaches a client as a code.
+    classes = set(STATUS_BY_ERROR) - {DomainError}
     emitted = {error_code(klass("x")) for klass in classes} | {"rate_limited"}
     table = guide.split("| code | HTTP |", 1)
     assert len(table) == 2, "the error-code table moved or was renamed"

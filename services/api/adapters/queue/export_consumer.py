@@ -2,7 +2,7 @@
 
 from packages.logging import bind_job_id
 from packages.queue import ExportJobV1, JobPayload
-from services.api.application.push_export import PushExport
+from services.api.application.exports import PushExport
 
 __all__ = ["ExportPushConsumer"]
 

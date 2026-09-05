@@ -5,7 +5,7 @@ because a queue retry would hit the very same bad file again.
 """
 
 from packages.importers import ParserRegistry, RawBlob
-from packages.queue import ImportParseJobV1
+from packages.queue import ImportParseJobV1, ProfileBuildJobV1, QueuePort
 from packages.repo import DocumentRepo, ImportRepo
 from packages.storage import StoragePort
 
@@ -24,17 +24,21 @@ class ParseImport:
         documents: DocumentRepo,
         storage: StoragePort,
         registry: ParserRegistry,
+        queue: QueuePort,
     ) -> None:
         self._imports = imports
         self._documents = documents
         self._storage = storage
         self._registry = registry
+        self._queue = queue
 
     async def __call__(self, job: ImportParseJobV1) -> None:
+        user_id = None
         try:
             record = await self._imports.get_unscoped(job.import_id)
             if record is None:
                 return
+            user_id = record.user_id
             data = await self._storage.get(record.storage_key)
             # The format was decided at presign time; re-state it as an extension so the
             # registry cannot pick a different parser than the one the row promises.
@@ -51,6 +55,10 @@ class ParseImport:
             )
             return
         await self._imports.set_status(job.import_id, STATUS_PARSED)
+        # New data means the read of this person has changed, and the Profile is revised in
+        # place rather than duplicated — so a rebuild is always the right response.
+        if user_id is not None:
+            await self._queue.enqueue(ProfileBuildJobV1(user_id=user_id))
 
 
 def _filename_for(filename: str, fmt: str) -> str:

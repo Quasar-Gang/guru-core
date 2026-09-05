@@ -1,34 +1,23 @@
-version: 1
-mode: lenient          # lenient: namespace allow-list, free-form values. strict: values must also be listed.
+# Role Model tags. A controlled vocabulary, kept small on purpose.
+#
+# Tags are how a user-authored template says which shelf it belongs on, and how the
+# catalogue is filtered. They never decide fit — that is the Fit Verdict's job, and it works
+# from Reports rather than from labels.
+version: 2
 
 namespaces:            # Allow-list. A tag whose prefix is not here is rejected on write.
-  - domain             # hard filter
-  - goal               # hard filter
-  - method             # soft match, affects ranking only
-  - level              # soft match, affects ranking only
-  - cadence            # soft match, affects ranking only
-  - horizon            # soft match, affects ranking only
-  - constraint         # hard exclusion
-  - persona            # display and synonyms, never filtered on
+  - shape              # the kind of life shape the template describes
+  - area               # which of Q-3's three the template leans on
+  - horizon            # how long the five-year path really takes to show
 
 value_rules:
   pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"   # lowercase, digits, hyphens
   max_length: 32
-  max_tags_per_record: 12
+  max_tags_per_record: 8
 
-enum_only:             # These namespaces stay closed because the scoring code compares their values directly.
-  level: [beginner, intermediate, advanced]
-  horizon: [weeks, months, years]
-  cadence: [daily, 3x-week, 5x-week, weekly-review, monthly-review]
+enum_only:             # Closed, because code compares these values directly.
+  area: [career, relationships, health]
+  horizon: [months, years, decade]
 
-known_values:          # Recorded for discovery only. New values are appended on write, feeding the UI filters.
-  domain: [fitness, learning, investing]
-  goal: [fat-loss, muscle, endurance, skill, exam, language, programming, saving, wealth-building]
-  method: [periodization, high-reps, 80-20, comprehensible-input, project-based,
-           spaced-repetition, dca, value-investing, budgeting]
-  constraint: [no-gym, injury-sensitive, low-capital, fixed-deadline, no-equipment]
-  persona: []          # free text, not recorded
-
-required_tags:
-  persona: [domain, goal]    # a persona needs a domain: and at least one goal:
-  trait: []                  # traits have no required tags
+known_values:          # Recorded for discovery; new values are appended on write.
+  shape: [depth, building, independence, leadership, steadiness, connecting]

@@ -15,11 +15,10 @@ __all__ = ["FakeLLM"]
 class FakeLLM:
     """Return a canned response per prompt name; `overrides` wins over `fixtures_dir`.
 
-    A prompt asked more than once in a session — `evaluate_readiness` runs once per
-    follow-up round — can answer differently each time: the n-th call to a prompt uses
-    `{name}.{n}.json` when that file exists, and falls back to `{name}.json` otherwise.
-    Without this a scripted conversation cannot progress, because round two would repeat
-    round one's questions and fail the "never re-ask a metric" rule.
+    A prompt asked more than once in a run can answer differently each time: the n-th call
+    to a prompt uses `{name}.{n}.json` when that file exists, and falls back to
+    `{name}.json` otherwise. Without that, a validate-and-retry chain could never be tested
+    end to end, because the second attempt would repeat the first one's mistake forever.
     """
 
     def __init__(

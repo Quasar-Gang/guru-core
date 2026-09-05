@@ -1,4 +1,7 @@
-"""ARQ worker entrypoint for the API service (import.parse). No business logic here."""
+"""ARQ worker entrypoint for the API service: import.parse and export.push.
+
+No business logic here.
+"""
 
 import asyncio
 
