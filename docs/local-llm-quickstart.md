@@ -23,31 +23,19 @@
 
 ## guru-core 設定
 
+`config/llm.yaml` 的預設是雲端 baseline（xAI `grok-4.6`）。切回本地只需環境變數，
+不必改動該檔：
+
 ```bash
+export LLM_ADAPTER=openai_compat
 export LLM_BASE_URL=http://127.0.0.1:11434/v1
 export LLM_API_KEY=ollama
 export LLM_MODEL=qwen3.5:9b
 export LLM_MAX_CONTEXT=16384
-```
-
-`config/llm.yaml` 應使用：
-
-```yaml
-provider:
-  adapter: openai_compat
-  base_url: ${LLM_BASE_URL}
-  api_key: ${LLM_API_KEY:-ollama}
-  model: ${LLM_MODEL:-qwen3.5:9b}
-  structured_output: json_schema
-  max_context_tokens: ${LLM_MAX_CONTEXT:-16384}
-  timeout_seconds: 240
-  concurrency: 1
-
-params:
-  evaluate:  {temperature: 0.2, max_output_tokens: 1500, reasoning_effort: none}
-  generate:  {temperature: 0.4, max_output_tokens: 4000, reasoning_effort: none}
-  revise:    {temperature: 0.3, max_output_tokens: 3000, reasoning_effort: none}
-  recommend: {temperature: 0.3, max_output_tokens: 800,  reasoning_effort: none}
+# 一份權重、一份 KV cache，序列化請求才可預測
+export LLM_CONCURRENCY=1
+# Ollama 接受 "none"；雲端 grok-4.6 一定推理、不接受，故其預設為 "low"
+export LLM_REASONING_EFFORT=none
 ```
 
 這裡選 `json_schema`，因為 Ollama 的 OpenAI-compatible `/v1/chat/completions` 已支援 `response_format`；guru-core 仍須保留 Pydantic 驗證、業務規則驗證與重試，不能把 provider 約束當成唯一防線。

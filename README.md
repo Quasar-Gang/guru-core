@@ -135,9 +135,15 @@ between a laptop and a hosted API never touches the file or any use case.
 | Setup | `LLM_ADAPTER` | `LLM_BASE_URL` | `LLM_STRUCTURED_OUTPUT` | `LLM_CONCURRENCY` | `LLM_REASONING_EFFORT` |
 |---|---|---|---|---|---|
 | Tests and development | `fake` | — | — | — | — |
-| Local Ollama *(default)* | `openai_compat` | `http://127.0.0.1:11434/v1` | `json_schema` | `1` | `none` |
+| xAI Grok *(default)* | `openai_compat` | `https://api.x.ai/v1` | `json_schema` | `0` | `low` |
+| Local Ollama | `openai_compat` | `http://127.0.0.1:11434/v1` | `json_schema` | `1` | `none` |
 | Local vLLM | `openai_compat` | `http://localhost:8000/v1` | `guided_json` | `1` | *(blank)* |
 | Claude | `anthropic` | *(blank)* | `tool_use` | `0` | *(blank)* |
+
+The default model is `grok-4.6` (`LLM_MODEL`), 500K context, reached with an `xai-…` key
+in `LLM_API_KEY`. It always reasons, so `none` is rejected — `low` is the cheapest effort
+it accepts, and its reasoning tokens are billed on top of `max_tokens`, which caps the
+answer only.
 
 Two fields exist because a local runtime and a hosted API want opposite things:
 

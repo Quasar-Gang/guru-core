@@ -66,7 +66,7 @@ def _capture() -> tuple[dict[str, Any], httpx.MockTransport]:
 # --- configuration is entirely environment-driven ---------------------------
 
 
-def test_defaults_describe_the_local_demo(monkeypatch):
+def test_defaults_describe_the_hosted_baseline(monkeypatch):
     for var in (
         "LLM_ADAPTER",
         "LLM_BASE_URL",
@@ -79,10 +79,11 @@ def test_defaults_describe_the_local_demo(monkeypatch):
     ):
         monkeypatch.delenv(var, raising=False)
     provider = load_llm_config().provider
-    assert provider.base_url == "http://127.0.0.1:11434/v1"
+    assert provider.base_url == "https://api.x.ai/v1"
+    assert provider.model == "grok-4.6"
     assert provider.structured_output == "json_schema"
-    assert provider.max_context_tokens == 16384
-    assert provider.concurrency == 1
+    assert provider.max_context_tokens == 500000
+    assert provider.concurrency == 0
 
 
 def test_every_provider_field_is_overridable(monkeypatch):
@@ -111,9 +112,9 @@ def test_blank_reasoning_effort_means_unset(monkeypatch):
     assert all(p.reasoning_effort is None for p in config.params.values())
 
 
-def test_reasoning_effort_defaults_to_none_for_the_local_model(monkeypatch):
+def test_reasoning_effort_defaults_to_low_for_grok(monkeypatch):
     monkeypatch.delenv("LLM_REASONING_EFFORT", raising=False)
-    assert load_llm_config().params_for(Purpose.generate).reasoning_effort == "none"
+    assert load_llm_config().params_for(Purpose.generate).reasoning_effort == "low"
 
 
 # --- adapters honour it -----------------------------------------------------
