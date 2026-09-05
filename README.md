@@ -26,48 +26,7 @@ checked off day by day, and revisable when you fall behind.
 
 ## How it works
 
-```mermaid
-flowchart LR
-    subgraph input [" "]
-        direction TB
-        G["🎯 Goal<br/><i>the only required input</i>"]
-        F["📄 Files<br/><i>optional</i>"]
-        C["📅 Calendar<br/><i>optional</i>"]
-        R["🧭 Role model<br/><i>optional</i>"]
-    end
-
-    A["🤖 Readiness check<br/>≤2 rounds of follow-ups"]
-    B["📐 Plan engine<br/>one template → three difficulties"]
-    S["🗓️ Scheduler<br/>relative → absolute time"]
-
-    subgraph output [" "]
-        direction TB
-        E["Easy"]
-        H["Hard"]
-        X["Extremely hard"]
-    end
-
-    D["✅ Check off · revise · export"]
-
-    G --> A
-    F -.-> A
-    C -.-> A
-    R -.-> A
-    A --> B --> S
-    S --> E & H & X
-    E & H & X --> D
-
-    classDef req fill:#EEEDFE,stroke:#534AB7,color:#26215C
-    classDef opt fill:#E1F5EE,stroke:#1D9E75,color:#04342C
-    classDef sys fill:#FAEEDA,stroke:#BA7517,color:#412402
-    classDef out fill:#E6F1FB,stroke:#378ADD,color:#042C53
-    class G req
-    class F,C,R opt
-    class A,B,S sys
-    class E,H,X,D out
-    style input fill:none,stroke:none
-    style output fill:none,stroke:none
-```
+<img src="docs/assets/flow-goal-to-plan.svg" alt="Goal to plan: one required input, three optional ones, then readiness check, plan engine, scheduler, three difficulty variants">
 
 **The design decision that matters:** the LLM never does calendar arithmetic. It produces
 one *relative* plan template — "a long run on Saturday morning, 45 minutes" — and a
@@ -82,58 +41,7 @@ Three independently deployable services share six packages, one PostgreSQL and o
 Services never call each other over HTTP — they communicate through the queue and the
 shared database.
 
-```mermaid
-flowchart TB
-    APP["📱 App<br/>web · mobile"]
-
-    subgraph services ["Deployable services"]
-        direction LR
-        API["<b>API Service</b><br/>HTTP + worker<br/>auth · endpoints · imports · exports"]
-        ENGINE["<b>Plan Engine</b><br/>worker only<br/>evaluate · generate · revise"]
-        RM["<b>Role Model Service</b><br/>HTTP only<br/>query · write · recommend"]
-    end
-
-    REDIS[("Redis<br/>queue + cache")]
-
-    subgraph packages ["Shared packages — every external dependency is a Protocol port"]
-        direction LR
-        LLM["llm"]
-        IMP["importers"]
-        REPO["repo"]
-        ST["storage"]
-        QC["queue · cache"]
-    end
-
-    PG[("PostgreSQL<br/>source of truth")]
-    OBJ[("Object storage<br/>local · R2")]
-    EXT["LLM provider<br/>Google · Notion"]
-
-    APP -->|"HTTPS + JWT"| API
-    API -->|enqueue| REDIS
-    REDIS -->|"plan.*"| ENGINE
-    REDIS -->|"import.parse · export.push"| API
-    API -->|HTTP| RM
-
-    API & ENGINE & RM --> packages
-    REPO --> PG
-    ST --> OBJ
-    LLM & IMP --> EXT
-
-    classDef client fill:#F1EFE8,stroke:#888780,color:#2C2C2A
-    classDef service fill:#EEEDFE,stroke:#534AB7,color:#26215C
-    classDef queue fill:#FAEEDA,stroke:#BA7517,color:#412402
-    classDef pkg fill:#E1F5EE,stroke:#1D9E75,color:#04342C
-    classDef data fill:#E6F1FB,stroke:#378ADD,color:#042C53
-    classDef ext fill:#FBEAF0,stroke:#D4537E,color:#4B1528
-    class APP client
-    class API,ENGINE,RM service
-    class REDIS queue
-    class LLM,IMP,REPO,ST,QC pkg
-    class PG,OBJ data
-    class EXT ext
-    style services fill:#F7F6FD,stroke:#AFA9EC
-    style packages fill:#F3FBF8,stroke:#9FE1CB
-```
+<img src="docs/assets/architecture.svg" alt="Architecture: three services over a shared queue and database, every external dependency behind a port">
 
 | Service | Shape | Owns |
 |---|---|---|
@@ -146,25 +54,7 @@ flowchart TB
 Dependencies point one way only. `import-linter` fails the build on a reverse import, so
 the rule cannot rot.
 
-```mermaid
-flowchart LR
-    CMD["cmd/<br/><i>what to start</i>"] --> CONT["container.py<br/><i>the only assembly point</i>"]
-    CONT --> AD_IN["adapters (inbound)<br/>FastAPI · ARQ consumers"]
-    CONT -.->|injects| AD_OUT["adapters (outbound)<br/>PgRepo · R2Storage · OpenAICompatLLM"]
-    AD_IN --> UC["application<br/><i>one use case per file</i>"]
-    UC --> PORTS["ports<br/><i>Protocol</i>"]
-    UC --> DOM["domain<br/>scheduler · state machines · diff · renderer"]
-    AD_OUT -.->|implements| PORTS
-
-    classDef c fill:#F1EFE8,stroke:#888780,color:#2C2C2A
-    classDef a fill:#FAEEDA,stroke:#BA7517,color:#412402
-    classDef u fill:#E1F5EE,stroke:#1D9E75,color:#04342C
-    classDef d fill:#EEEDFE,stroke:#534AB7,color:#26215C
-    class CMD,CONT c
-    class AD_IN,AD_OUT a
-    class UC,PORTS u
-    class DOM d
-```
+<img src="docs/assets/hexagonal-layers.svg" alt="Hexagonal layers: cmd to container to adapters to application to domain">
 
 Every port has a real implementation **and** a fake, which is why the unit and
 application suites need no Docker, no database and no network:
@@ -180,37 +70,7 @@ application suites need no Docker, no database and no network:
 
 ### From goal to calendar
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant App
-    participant API as API Service
-    participant Q as Redis
-    participant PE as Plan Engine
-    participant LLM
-    participant DB as PostgreSQL
-
-    App->>API: POST /v1/plan-sessions {goal}
-    API->>Q: enqueue plan.generate
-    API-->>App: 202 {session_id}
-
-    Q->>PE: plan.generate
-    PE->>LLM: evaluate_readiness
-    LLM-->>PE: {ready: false, questions[≤5]}
-    PE->>DB: status = questioning
-    App->>API: POST .../answers
-    API->>Q: enqueue plan.continue
-
-    Q->>PE: plan.continue
-    PE->>LLM: evaluate_readiness
-    LLM-->>PE: {ready: true}
-    PE->>LLM: generate_plans
-    LLM-->>PE: one PlanTemplate (relative)
-    PE->>PE: derive ×3 · schedule · validate pacing
-    PE->>DB: 3 plans + plan_tasks (absolute)
-    App->>API: GET /v1/plan-sessions/{id}
-    API-->>App: {status: done, plans[3]}
-```
+<img src="docs/assets/sequence-goal-to-calendar.svg" alt="Sequence: creating a plan session, one follow-up round, then three generated plans">
 
 Model output is validated twice — Pydantic for shape, then business rules for
 sense — and a failure feeds the specific violation back for a retry. If the retries run
@@ -320,6 +180,17 @@ Every push runs lint, `mypy --strict`, the import contracts, both test suites an
 The heaviest coverage sits on the deterministic core: the scheduler, difficulty
 derivation, the revision diff, and the state machines. That is where regressions would
 be invisible and expensive.
+
+## Diagrams
+
+The four diagrams above are pre-rendered SVGs with an explicit white canvas, so they
+look the same in light and dark mode — mermaid's own output is transparent and would
+otherwise pick up the reader's page colour. Sources live in
+[`docs/diagrams/`](docs/diagrams/) as `.mmd`; after editing one, regenerate with:
+
+```bash
+uv run python scripts/render_diagrams.py   # opens a browser, writes docs/assets/*.svg
+```
 
 ## Repository layout
 

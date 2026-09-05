@@ -1,0 +1,18 @@
+%%{init: {'theme':'base','themeVariables':{'background':'#ffffff','primaryColor':'#EEEDFE','primaryTextColor':'#26215C','primaryBorderColor':'#534AB7','secondaryColor':'#E1F5EE','tertiaryColor':'#FAEEDA','lineColor':'#6B6B6B','textColor':'#2C2C2A','mainBkg':'#EEEDFE','nodeBorder':'#534AB7','clusterBkg':'#F7F6FD','clusterBorder':'#AFA9EC','edgeLabelBackground':'#ffffff','titleColor':'#2C2C2A','fontFamily':'ui-sans-serif, -apple-system, Segoe UI, sans-serif'}}}%%
+flowchart LR
+    CMD["cmd/<br/><i>what to start</i>"] --> CONT["container.py<br/><i>the only assembly point</i>"]
+    CONT --> AD_IN["adapters (inbound)<br/>FastAPI · ARQ consumers"]
+    CONT -.->|injects| AD_OUT["adapters (outbound)<br/>PgRepo · R2Storage · OpenAICompatLLM"]
+    AD_IN --> UC["application<br/><i>one use case per file</i>"]
+    UC --> PORTS["ports<br/><i>Protocol</i>"]
+    UC --> DOM["domain<br/>scheduler · state machines · diff · renderer"]
+    AD_OUT -.->|implements| PORTS
+
+    classDef c fill:#F1EFE8,stroke:#888780,color:#2C2C2A
+    classDef a fill:#FAEEDA,stroke:#BA7517,color:#412402
+    classDef u fill:#E1F5EE,stroke:#1D9E75,color:#04342C
+    classDef d fill:#EEEDFE,stroke:#534AB7,color:#26215C
+    class CMD,CONT c
+    class AD_IN,AD_OUT a
+    class UC,PORTS u
+    class DOM d
