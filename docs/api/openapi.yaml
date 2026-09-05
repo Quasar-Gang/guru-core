@@ -845,10 +845,10 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
-          content:
+          content: &id001
             application/json:
               schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+                $ref: '#/components/schemas/ErrorResponse'
     get:
       tags:
       - files
@@ -926,10 +926,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          content: *id001
   /v1/plan-sessions:
     post:
       tags:
@@ -1048,10 +1045,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          content: *id001
   /v1/plan-sessions/{session_id}/answers:
     post:
       tags:
@@ -1131,10 +1125,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          content: *id001
   /v1/plans:
     get:
       tags:
@@ -1252,10 +1243,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          content: *id001
     patch:
       tags:
       - plans
@@ -1408,10 +1396,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          content: *id001
   /v1/plans/{plan_id}/archive:
     post:
       tags:
@@ -1477,10 +1462,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          content: *id001
   /v1/plans/{plan_id}/tasks:
     get:
       tags:
@@ -1782,10 +1764,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          content: *id001
   /v1/plans/{plan_id}/export:
     post:
       tags:
@@ -1951,10 +1930,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          content: *id001
   /v1/plans/{plan_id}/export/{target}:
     delete:
       tags:
@@ -2020,10 +1996,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          content: *id001
   /v1/plans/{plan_id}/revisions:
     post:
       tags:
@@ -2158,10 +2131,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          content: *id001
   /v1/plans/{plan_id}/revisions/{revision_id}:
     get:
       tags:
@@ -2234,10 +2204,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          content: *id001
   /v1/plans/{plan_id}/revisions/{revision_id}/accept:
     post:
       tags:
@@ -2321,10 +2288,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          content: *id001
   /v1/plans/{plan_id}/revisions/{revision_id}/reject:
     post:
       tags:
@@ -2394,10 +2358,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          content: *id001
   /v1/jobs/{job_id}:
     get:
       tags:
@@ -2471,10 +2432,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          content: *id001
   /v1/role-models:
     get:
       tags:
@@ -2606,7 +2564,8 @@ paths:
               title: Body
       responses:
         '200':
-          description: '`201` with the created record, proxied from the Role Model Service.'
+          description: The created record. The upstream status is passed through unchanged, so a successful
+            create actually arrives as `201` even though the schema declares `200`.
           content:
             application/json:
               schema: {}
@@ -2813,10 +2772,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          content: *id001
     put:
       tags:
       - role-models
@@ -2918,7 +2874,8 @@ paths:
           title: X-Api-Key
       responses:
         '200':
-          description: '`204` with an empty body once the role model is deactivated.'
+          description: An empty body. The upstream status is passed through unchanged, so this actually
+            arrives as `204` even though the schema declares `200`.
           content:
             application/json:
               schema: {}
@@ -2945,10 +2902,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '422':
           description: Validation Error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/HTTPValidationError'
+          content: *id001
 components:
   schemas:
     AnswerInput:

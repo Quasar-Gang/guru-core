@@ -216,6 +216,23 @@ uv run python scripts/render_diagrams.py   # opens a browser, writes docs/assets
 The generator only rebuilds SVGs whose name matches a `.mmd`, so it leaves the
 hand-drawn pair alone.
 
+## Documentation
+
+| Document | What it covers |
+|---|---|
+| [`docs/api/README.md`](docs/api/README.md) | API guide — the call sequence behind each feature, with runnable examples |
+| [`docs/api/openapi.json`](docs/api/openapi.json) · [`.yaml`](docs/api/openapi.yaml) | OpenAPI 3.1 spec, exported from the running app |
+| [`docs/db/schema.md`](docs/db/schema.md) | All 14 tables: columns, constraints, ownership, and why each shape was chosen |
+| [`docs/research/local-llm-evaluation.md`](docs/research/local-llm-evaluation.md) | Local model selection, licence analysis, and the gates a replacement must clear |
+| [`guru-core-PRD.md`](guru-core-PRD.md) | The specification this was built from |
+
+Swagger UI and ReDoc are served live at `/docs` and `/redoc`. Regenerate the exported
+spec after changing a route:
+
+```bash
+uv run python scripts/export_openapi.py
+```
+
 ## Repository layout
 
 ```
@@ -228,6 +245,7 @@ services/
 config/         yaml the code reads, never hard-coded
 seeds/          role model starting samples
 migrations/     alembic
+docs/           api reference · db schema · research · diagrams
 tests/          unit · application · integration · fixtures
 ```
 

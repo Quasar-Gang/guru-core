@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from services.api.adapters.http.auth_router import router as auth_router
 from services.api.adapters.http.files_router import router as files_router
@@ -34,6 +35,8 @@ if TYPE_CHECKING:  # pragma: no cover - typing only; avoids a container <-> adap
 
 __all__ = [
     "API_DESCRIPTION",
+    "ErrorBody",
+    "ErrorResponse",
     "API_PREFIX",
     "OPENAPI_TAGS",
     "STATUS_BY_ERROR",
@@ -155,6 +158,56 @@ async def _validation_error_handler(request: Request, exc: Exception) -> JSONRes
     return _error_response(422, "invalid_input", str(exc.errors()))
 
 
+class ErrorBody(BaseModel):
+    """The `error` object carried by every non-2xx response."""
+
+    code: str = Field(examples=["invalid_input"], description="Machine-readable; branch on this.")
+    message: str = Field(
+        examples=["timezone 'GMT+8' is not an IANA name"],
+        description="For developers. Do not show it to end users or match on it.",
+    )
+
+
+class ErrorResponse(BaseModel):
+    """Every failure looks like this, including validation errors."""
+
+    error: ErrorBody
+
+
+def _replace_default_validation_schema(app: FastAPI) -> None:
+    """Point every 422 at `ErrorResponse`.
+
+    FastAPI advertises its own `HTTPValidationError` shape, but `_validation_error_handler`
+    rewrites the body into our envelope, so the published schema would send a generated
+    client looking for a `detail` array that never arrives.
+    """
+    envelope = {
+        "description": "Validation failed",
+        "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorResponse"}}},
+    }
+    original = app.openapi
+
+    def openapi() -> dict[str, Any]:
+        spec = original()
+        schemas = spec.setdefault("components", {}).setdefault("schemas", {})
+        schemas.setdefault("ErrorResponse", ErrorResponse.model_json_schema())
+        schemas.setdefault("ErrorBody", ErrorBody.model_json_schema())
+        for operations in spec["paths"].values():
+            for operation in operations.values():
+                response = operation.get("responses", {}).get("422")
+                if response is None:
+                    continue
+                if "HTTPValidationError" in str(response.get("content", "")):
+                    operation["responses"]["422"] = {
+                        **envelope,
+                        "description": response.get("description") or envelope["description"],
+                    }
+        app.openapi_schema = spec
+        return spec
+
+    app.openapi = openapi  # type: ignore[method-assign]
+
+
 def create_app(container: ApiContainer) -> FastAPI:
     """Build the API service FastAPI app; every dependency comes from `container`."""
     app = FastAPI(
@@ -193,4 +246,5 @@ def create_app(container: ApiContainer) -> FastAPI:
     app.include_router(plans_router, prefix=API_PREFIX)
     app.include_router(jobs_router, prefix=API_PREFIX)
     app.include_router(role_models_router, prefix=API_PREFIX)
+    _replace_default_validation_schema(app)
     return app
