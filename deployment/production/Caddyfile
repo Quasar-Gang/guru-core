@@ -1,0 +1,20 @@
+# TLS terminator for the Droplet. Caddy obtains and renews the Let's Encrypt
+# certificate itself; nothing else needs to know about it.
+{
+	email {$ACME_EMAIL}
+}
+
+# The API. Everything else on the Droplet stays on the internal network.
+{$API_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy api:8000
+}
+
+# The frontend, once it is deployed. It runs on the host under systemd, not in
+# this compose project, so Caddy reaches it through the host gateway (declared
+# as extra_hosts in docker-compose.yml). Uncomment and set APP_DOMAIN.
+#
+# {$APP_DOMAIN} {
+# 	encode zstd gzip
+# 	reverse_proxy host.docker.internal:3000
+# }

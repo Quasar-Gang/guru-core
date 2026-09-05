@@ -88,7 +88,10 @@ deploy: deploy-sync deploy-build deploy-up deploy-migrate deploy-seed
 deploy-bootstrap:
 	@test "$(env)" = "production" || { echo "deploy-bootstrap is production-only"; exit 1; }
 	ssh $(ssh_host) 'command -v docker >/dev/null || curl -fsSL https://get.docker.com | sh'
-	ssh $(ssh_host) 'ufw allow 22 && ufw allow $(shell sed -n "s/^API_PORT=//p" $(env_file)) && ufw --force enable'
+	# 80 is needed for the Let's Encrypt HTTP-01 challenge, not just redirects.
+	ssh $(ssh_host) 'ufw allow 22 && ufw allow 80 && ufw allow 443 && ufw --force enable'
+	# The API used to be published here; Caddy fronts it now.
+	ssh $(ssh_host) 'ufw delete allow 8000 || true'
 	ssh $(ssh_host) 'mkdir -p $(remote_dir)'
 
 # No-op for local: there is nothing to send anywhere.
