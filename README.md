@@ -231,19 +231,8 @@ migrations/     alembic
 tests/          unit · application · integration · fixtures
 ```
 
-## Language
-
-The codebase is English-only. Files that carry *content* rather than code — LLM prompts,
-readiness metrics, role model seeds, fixtures — keep their original language. See
-[`CONTRIBUTING.md`](CONTRIBUTING.md#language).
-
 ## License
 
 Proprietary. Copyright (c) 2026 Quasar-Gang, all rights reserved — see
 [`LICENSE`](LICENSE). No licence to use, copy, modify or distribute this software
 is granted without written permission.
-
-Third-party dependencies keep their own licences. Model weights used with this
-software are governed by their providers' terms; the study in
-[`docs/research/local-llm-evaluation.md`](docs/research/local-llm-evaluation.md)
-section 3 covers which of them are permissive and which carry use policies.
