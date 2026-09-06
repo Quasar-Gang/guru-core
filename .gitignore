@@ -10,4 +10,5 @@ __pycache__/
 *.egg-info/
 dist/
 deployment/production/.env.production
+deployment/local/.env.local
 deployment/*/data/

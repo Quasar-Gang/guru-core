@@ -205,7 +205,22 @@ make deploy-down env=local
 ```
 
 Compose publishes postgres and redis on 5433 / 6380 so they do not collide with whatever is
-already running. `env=production` runs the same targets against a DigitalOcean Droplet — see
+already running. The stack reads fixtures by default; to point it at a real provider, put the
+credentials in `deployment/local/.env.local` — the Makefile picks that file up automatically,
+and it is gitignored because it carries a key:
+
+```bash
+LLM_ADAPTER=openai_compat
+LLM_BASE_URL=https://api.x.ai/v1
+LLM_API_KEY=xai-...
+LLM_MODEL=grok-4.6
+```
+
+Scoring six shapes with five cited evidence items each is a large generation — around two
+minutes against a hosted model — so `scripts/smoke.sh` waits up to `SMOKE_POLL_SECONDS`
+(default 300) for each queued step.
+
+`env=production` runs the same targets against a DigitalOcean Droplet — see
 [`deployment/README.md`](deployment/README.md).
 
 ---

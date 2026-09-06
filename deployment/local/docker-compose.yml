@@ -2,9 +2,13 @@
 #
 #   make deploy-up env=local
 #
-# Everything here is a throwaway development value — no .env file is read.
-# Day-to-day development uses the PostgreSQL and Redis already running on
-# 5432 / 6379, so these publish on 5433 / 6380 to avoid a collision.
+# Every secret here is a throwaway development value. Day-to-day development uses
+# the PostgreSQL and Redis already running on 5432 / 6379, so these publish on
+# 5433 / 6380 to avoid a collision.
+#
+# The LLM settings are the exception: they default to the fixtures, and
+# `deployment/local/.env.local` overrides them with a real provider when you want
+# to test against one. That file is gitignored, because it carries a key.
 name: guru-core-local
 
 # The image is built once, by the `api` service; the other three only run it.
@@ -26,7 +30,16 @@ x-app: &app
     OAUTH_TOKEN_ENC_KEY: sLrt-8fSPiXBBdQhzlz47gTMLF89k0ODWxr8NPgwQcA=
     # Local verification only. Never enable this outside compose.
     ALLOW_FAKE_LOGIN: "1"
-    LLM_ADAPTER: fake
+    # Fixtures unless deployment/local/.env.local says otherwise.
+    LLM_ADAPTER: ${LLM_ADAPTER:-fake}
+    LLM_BASE_URL: ${LLM_BASE_URL:-}
+    LLM_API_KEY: ${LLM_API_KEY:-dummy}
+    LLM_MODEL: ${LLM_MODEL:-}
+    LLM_STRUCTURED_OUTPUT: ${LLM_STRUCTURED_OUTPUT:-json_schema}
+    LLM_MAX_CONTEXT: ${LLM_MAX_CONTEXT:-500000}
+    LLM_TIMEOUT: ${LLM_TIMEOUT:-240}
+    LLM_CONCURRENCY: ${LLM_CONCURRENCY:-0}
+    LLM_REASONING_EFFORT: ${LLM_REASONING_EFFORT:-low}
   volumes:
     - storage:/data/storage
   depends_on:

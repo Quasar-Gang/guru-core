@@ -11,6 +11,9 @@ set -euo pipefail
 API_BASE="${API_BASE:-http://127.0.0.1:8000}"
 V1="${API_BASE}/v1"
 EMAIL="${SMOKE_EMAIL:-smoke-$(date +%s)@example.com}"
+# Seconds to wait for any one queued step. A real provider scoring six shapes with five
+# cited evidence items each is a large generation; the fixtures answer instantly.
+POLL_SECONDS="${SMOKE_POLL_SECONDS:-300}"
 
 say() { printf '\n=== %s\n' "$1"; }
 fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
@@ -59,14 +62,14 @@ curl -sf -X POST "${V1}/imports/${IMPORT}/complete" "${AUTH[@]}" >/dev/null
 
 poll() {  # poll <url> <jq path> <wanted> <failed>
   local tries=0 body value
-  while [ $tries -lt 60 ]; do
+  while [ $tries -lt "$POLL_SECONDS" ]; do
     body=$(curl -sf "$1" "${AUTH[@]}" || true)
     value=$(echo "$body" | jq -r "$2" 2>/dev/null || echo "")
     [ "$value" = "$3" ] && { echo "$body"; return 0; }
     [ "$value" = "$4" ] && fail "$1 reported ${4}: $(echo "$body" | jq -r '.error')"
     tries=$((tries + 1)); sleep 1
   done
-  fail "$1 never reached ${3} (last: ${value})"
+  fail "$1 never reached ${3} after ${POLL_SECONDS}s (last: ${value})"
 }
 
 say "wait for the parse and the profile"

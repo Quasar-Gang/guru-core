@@ -5,6 +5,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
+from packages.config import load_dotenv
 from packages.llm import LlmCallLog, PromptRegistry, Purpose, load_llm_config
 from packages.llm.factory import build_llm
 
@@ -33,4 +34,5 @@ async def _main() -> None:
 
 
 if __name__ == "__main__":
+    load_dotenv()
     asyncio.run(_main())

@@ -6,9 +6,16 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel
 
+from packages.config.dotenv import load_dotenv
 from packages.config.env import MissingEnvVar, expand_env
 
-__all__ = ["CONFIG_DIR", "MissingEnvVar", "expand_env", "load_yaml_config"]
+__all__ = [
+    "CONFIG_DIR",
+    "MissingEnvVar",
+    "expand_env",
+    "load_dotenv",
+    "load_yaml_config",
+]
 
 CONFIG_DIR = Path(__file__).resolve().parents[2] / "config"
 
